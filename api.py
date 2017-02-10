@@ -6,19 +6,19 @@ import asyncio
 import asyncpg
 
 source_db = {
-    "host": os.environ.get("POSTGRESQL_SOURCE_HOST") or "localhost",
+    "host": os.environ.get("POSTGRESQL_SOURCE_HOST") or "vaindock_postgres_raw",
     "port": os.environ.get("POSTGRESQL_SOURCE_PORT") or 5532,
-    "user": os.environ.get("POSTGRESQL_SOURCE_USER") or "vgstats",
-    "password": os.environ.get("POSTGRESQL_SOURCE_PASSWORD") or "vgstats",
-    "database": os.environ.get("POSTGRESQL_SOURCE_DB") or "vgstats"
+    "user": os.environ.get("POSTGRESQL_SOURCE_USER") or "vainraw",
+    "password": os.environ.get("POSTGRESQL_SOURCE_PASSWORD") or "vainraw",
+    "database": os.environ.get("POSTGRESQL_SOURCE_DB") or "vainsocial-raw"
 }
 
 dest_db = {
-    "host": os.environ.get("POSTGRESQL_DEST_HOST") or "localhost",
+    "host": os.environ.get("POSTGRESQL_DEST_HOST") or "vaindock_postgres_web",
     "port": os.environ.get("POSTGRESQL_DEST_PORT") or 5432,
-    "user": os.environ.get("POSTGRESQL_DEST_USER") or "vainsocial",
-    "password": os.environ.get("POSTGRESQL_DEST_PASSWORD") or "vainsocial",
-    "database": os.environ.get("POSTGRESQL_DEST_DB") or "vainsocial"
+    "user": os.environ.get("POSTGRESQL_DEST_USER") or "vainweb",
+    "password": os.environ.get("POSTGRESQL_DEST_PASSWORD") or "vainweb",
+    "database": os.environ.get("POSTGRESQL_DEST_DB") or "vainsocial-web"
 }
 
 
