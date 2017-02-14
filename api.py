@@ -62,14 +62,12 @@ FALSE AS "surrender",
 0 AS "laneMinionsSlayed",
 0 AS "jungleMinionsSlayed",
 0 AS "turretsDestroyed",
-(attributes->'stats'->>'heroKills')::int AS "heroKills",
-0 AS "heroAssits",
-0 AS "heroDeaths",
-(attributes->'stats'->>'krakenCaptures')::int AS "krakensCaptured",
+(attributes->'stats'->>'heroKills')::int AS "kills",
+0 AS "assits",
+0 AS "deaths",
+(attributes->'stats'->>'krakenCaptures')::int AS "krakenCaptures",
 0 AS "goldMineCaptures",
-0 AS "crystalMineCaptures",
-0 AS "afkCount",
-0 AS "afkTime"
+0 AS "crystalMineCaptures"
 
 FROM apidata WHERE type='roster'
         """,
@@ -81,19 +79,16 @@ attributes->>'actor' AS "hero",
 (attributes->'stats'->>'kills')::int AS "kills",
 (attributes->'stats'->>'deaths')::int AS "deaths",
 (attributes->'stats'->>'assists')::int AS "assists",
-0.0 AS "kd",
-0.0 AS "kda",
+0.0 AS "KD",
+0.0 AS "KDA",
 (attributes->'stats'->>'nonJungleMinionKills')::int AS "laneMinionsSlayed",
 (attributes->'stats'->>'minionKills')::int AS "jungleMinionsSlayed",
 (attributes->'stats'->>'turretCaptures')::int AS "turretsDestroyed",
-0 AS "heroKills",
-0 AS "heroDeaths",
-0 AS "heroAssits",
-(attributes->'stats'->>'krakenCaptures')::int AS "krakensCaptured",
+(attributes->'stats'->>'krakenCaptures')::int AS "krakenCaptures",
 (attributes->'stats'->>'goldMineCaptures')::int AS "goldMineCaptures",
 (attributes->'stats'->>'crystalMineCaptures')::int AS "crystalMineCaptures",
-(attributes->'stats'->>'wentAfk')::bool::int AS "afkCount",
-(attributes->'stats'->>'firstAfkTime')::float::int AS "afkTime",
+(attributes->'stats'->>'wentAfk')::bool::int AS "wentAfk",
+0 AS "killParticipation",
 FALSE AS "perfectGame"
 
 FROM apidata WHERE type='participant'
@@ -116,14 +111,8 @@ attributes->'stats'->>'lifetimeGold' AS "lifeTimeGold",
 0 AS "lifeTimeKills",
 0 AS "lifeTimeDeaths",
 0 AS "lifeTimeAssists",
-'' AS "bestHeroPlayingWith",
-'' AS "worstHeroPlayingWith",
-'' AS "bestHeroPlayingAgainst",
-'' AS "worstHeroPlayingAgainst",
 0 AS "lifeTimeKD",
-0 AS "lifeTimeKDA",
-'[]'::jsonb AS "heroPerformance",
-'[]'::jsonb AS "rolePerformance"
+0 AS "lifeTimeKDA"
 
 FROM apidata WHERE type='player'
         """
