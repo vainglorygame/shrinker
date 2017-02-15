@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import os
+import glob
 import logging
 import asyncio
 import asyncpg
@@ -28,95 +29,18 @@ class Processor(object):
         self._srcpool = self._destpool = None
 
     def setup(self):
-        """Load conversion queries."""
-        self._queries = {
-            "match": """
-SELECT
-
-(attributes->>'duration')::int AS "duration",
-attributes->>'gameMode' AS "gameMode",
-COALESCE(NULLIF(attributes->>'patchVersion', ''), '0')::int AS "patchVersion",
-attributes->>'shardId' AS "shard",
-attributes->'stats'->>'endGameReason' AS "result",
-attributes->'stats'->>'queue' AS "queue",
-
-false AS "anyAFK",
-'' AS "winningTeam",
-0 AS "krakenCaptures",
-0 AS "laneMinionsSlayed",
-0 AS "jungleMinionsSlayed",
-0 AS "heroDeaths"
-
-FROM apidata WHERE type='match'
-        """,
-            "match_results": """
-SELECT
-
-attributes->'stats'->>'side' AS "team",
-FALSE AS "winner",
-FALSE AS "surrender",
-0 AS "teamSize",
-'' AS "hero_1",
-'' AS "hero_2",
-'' AS "hero_3",
-0 AS "laneMinionsSlayed",
-0 AS "jungleMinionsSlayed",
-0 AS "turretsDestroyed",
-(attributes->'stats'->>'heroKills')::int AS "kills",
-0 AS "assists",
-0 AS "deaths",
-(attributes->'stats'->>'krakenCaptures')::int AS "krakenCaptures",
-0 AS "goldMineCaptures",
-0 AS "crystalMineCaptures"
-
-FROM apidata WHERE type='roster'
-        """,
-            "match_participation": """
-SELECT
-
-0 AS "rosterId",
-attributes->>'actor' AS "hero",
-(attributes->'stats'->>'kills')::int AS "kills",
-(attributes->'stats'->>'deaths')::int AS "deaths",
-(attributes->'stats'->>'assists')::int AS "assists",
-0.0 AS "KD",
-0.0 AS "KDA",
-(attributes->'stats'->>'nonJungleMinionKills')::int AS "laneMinionsSlayed",
-(attributes->'stats'->>'minionKills')::int AS "jungleMinionsSlayed",
-(attributes->'stats'->>'turretCaptures')::int AS "turretsDestroyed",
-(attributes->'stats'->>'krakenCaptures')::int AS "krakenCaptures",
-(attributes->'stats'->>'goldMineCaptures')::int AS "goldMineCaptures",
-(attributes->'stats'->>'crystalMineCaptures')::int AS "crystalMineCaptures",
-(attributes->'stats'->>'wentAfk')::bool::int AS "wentAfk",
-0 AS "killParticipation",
-FALSE AS "perfectGame"
-
-FROM apidata WHERE type='participant'
-        """,
-            "player": """
-SELECT
-
-id AS "apiId",
-attributes->>'name' AS "name",
-(attributes->'stats'->>'level')::int AS "level",
-(attributes->'stats'->>'xp')::int AS "xp",
-(attributes->'stats'->>'played')::int AS "played",
-(attributes->'stats'->>'played_ranked')::int AS "playedRanked",
-(attributes->'stats'->>'wins')::int AS "wins",
-(attributes->'stats'->>'winStreak')::int AS "streak",
-'' AS "herosUnlocked",
-'' "skinsUnlocked",
-0 AS "totalGamePlaytime",
-attributes->'stats'->>'lifetimeGold' AS "lifeTimeGold",
-0 AS "lifeTimeKills",
-0 AS "lifeTimeDeaths",
-0 AS "lifeTimeAssists",
-0 AS "lifeTimeKD",
-0 AS "lifeTimeKDA"
-
-FROM apidata WHERE type='player'
-        """
-        }
+        """Load .sql files from queries/ directory.
+        File name is the table to insert into."""
+        self._queries = {}
+        scriptroot = os.path.realpath(
+            os.path.join(os.getcwd(), os.path.dirname(__file__)))
+        # glob *.sql
+        for fp in glob.glob(scriptroot + "/queries/*.sql"):
+            # utf-8-sig is used by pgadmin, doesn't hurt to specify
+            with open(fp, "r", encoding="utf-8-sig") as file:
+                table = os.path.splitext(os.path.basename(fp))[0]
+                logging.info("loaded query for '%s'", table)
+                self._queries[table] = file.read()
 
     async def connect(self, source, dest):
         """Connect to database by arguments."""
