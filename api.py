@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import os
+import glob
 import logging
 import asyncio
 import asyncpg
@@ -22,65 +23,59 @@ dest_db = {
 }
 
 
-class Database(object):
-    async def connect(self, **connect_kwargs):
+class Processor(object):
+    def __init__(self):
+        self._queries = {}
+        self._srcpool = self._destpool = None
+
+    def setup(self):
+        """Load .sql files from queries/ directory.
+        File name is the table to insert into."""
+        self._queries = {}
+        scriptroot = os.path.realpath(
+            os.path.join(os.getcwd(), os.path.dirname(__file__)))
+        # glob *.sql
+        for fp in glob.glob(scriptroot + "/queries/*.sql"):
+            # utf-8-sig is used by pgadmin, doesn't hurt to specify
+            with open(fp, "r", encoding="utf-8-sig") as file:
+                table = os.path.splitext(os.path.basename(fp))[0]
+                logging.info("loaded query for '%s'", table)
+                self._queries[table] = file.read()
+
+    async def connect(self, source, dest):
         """Connect to database by arguments."""
-        self._pool = await asyncpg.create_pool(**connect_kwargs)
+        self._srcpool = await asyncpg.create_pool(**source)
+        self._destpool = await asyncpg.create_pool(**dest)
 
-    async def each(self, fetchquery, func, **func_args):
+    async def run(self, stop_after=-1):
         """Execute a function for each row that is fetched with query."""
-        # TODO use iterator instead of callback
-        async with self._pool.acquire() as conn:
-            async with conn.transaction():
-                tasks = []
-                async for record in conn.cursor(fetchquery):
-                    tasks.append(
-                        asyncio.ensure_future(func(record, **func_args))
-                    )
-                await asyncio.gather(*tasks)
+        # TODO unnest
+        async with self._srcpool.acquire() as srccon:
+            async with self._destpool.acquire() as destcon:
+                for table, query in self._queries.items():
+                    stop_after -= 1  # TODO for debugging, don't process whole table
+                    logging.info("processing table %s", table)
+                    async with srccon.transaction():
+                        async with destcon.transaction():
+                            async for rec in srccon.cursor(query):
+                                await self.into(destcon, rec, table)
 
-    async def into(self, data, table):
-        """Insert a named tuple into a database."""
+    async def into(self, conn, data, table):
+        """Insert a named tuple into a table."""
         items = list(data.items())
         keys, values = [x[0] for x in items], [x[1] for x in items]
         placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
         query = "INSERT INTO {} (\"{}\") VALUES ({})".format(
             table, "\", \"".join(keys), ", ".join(placeholders))
-
-        async with self._pool.acquire() as conn:
-            await conn.fetch(query, (*data))
+        await conn.execute(query, (*data))
 
 
-async def process():
-    sdb = Database()
-    await sdb.connect(**source_db)
-    ddb = Database()
-    await ddb.connect(**dest_db)
+async def main():
+    pr = Processor()
+    await pr.connect(source_db, dest_db)
+    pr.setup()
+    await pr.run(stop_after=1000)
 
-    selqry = """
-SELECT
-
-(data->'attributes'->>'duration')::int AS "duration",
-data->'attributes'->>'gameMode' AS "gameMode",
-COALESCE(NULLIF(data->'attributes'->>'patchVersion', ''), '0')::int AS "patchVersion",
-data->'attributes'->>'shardId' AS "shard",
-data->'attributes'->'stats'->>'endGameReason' AS "result",
-data->'attributes'->'stats'->>'queue' AS "queue",
-
-false AS "anyAFK",
-'' AS "winningTeam",
-0 AS "krakenCaptures",
-0 AS "laneMinionsSlayed",
-0 AS "jungleMinionsSlayed",
-0 AS "heroDeaths"
-
-FROM match LIMIT 100
-    """
-
-    await sdb.each(selqry, ddb.into, table="match")
-
-if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        process()
-    )
+logging.basicConfig(level=logging.DEBUG)
+loop = asyncio.get_event_loop()
+loop.run_until_complete(main())
