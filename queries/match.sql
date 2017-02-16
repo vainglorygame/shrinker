@@ -15,4 +15,4 @@ false AS "anyAFK",
 0 AS "jungleMinionsSlayed",
 0 AS "heroDeaths"
 
-FROM apidata WHERE type='match'
+FROM match

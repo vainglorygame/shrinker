@@ -19,4 +19,4 @@ FALSE AS "surrender",
 0 AS "afkCount",
 0 AS "afkTime"
 
-FROM apidata WHERE type='roster'
+FROM roster

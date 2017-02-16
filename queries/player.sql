@@ -18,4 +18,4 @@ attributes->'stats'->>'lifetimeGold' AS "lifeTimeGold",
 0 AS "lifeTimeKD",
 0 AS "lifeTimeKDA"
 
-FROM apidata WHERE type='player'
+FROM player

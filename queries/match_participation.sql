@@ -1,6 +1,7 @@
 SELECT
 
-id AS "player_id",
+id AS "participant_id",
+relationships->'player'-> 'data' ->> 'id' AS player_id,
 0 AS "rosterId",
 0 AS "fk_player_id",
 0 AS "fk_match_results_id",
@@ -20,4 +21,4 @@ attributes->>'actor' AS "hero",
 (attributes->'stats'->>'wentAfk')::bool::int AS "wentAfk",
 FALSE AS "perfectGame"
 
-FROM apidata WHERE type='participant'
+FROM participant
