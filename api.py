@@ -57,13 +57,8 @@ class Processor(object):
                     stop_after -= 1  # TODO for debugging, don't process whole table
                     async with srccon.transaction():
                         async with destcon.transaction():
-                            rec_o = ""
-                            try:
-                                async for rec in srccon.cursor(query):
-                                    rec_o = rec
-                                    await self.into(destcon, rec, table)
-                            except:
-                                logging.error("rec: %s", rec_o)
+                            async for rec in srccon.cursor(query):
+                                await self.into(destcon, rec, table)
 
     async def into(self, conn, data, table):
         """Insert a named tuple into a table."""
@@ -72,11 +67,7 @@ class Processor(object):
         placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
         query = "INSERT INTO {} (\"{}\") VALUES ({})".format(
             table, "\", \"".join(keys), ", ".join(placeholders))
-        try:
-            await conn.execute(query, (*data))
-        except:
-            logging.error("Query: '%s'", query)
-            logging.error("Data: '%s'", data)
+        await conn.execute(query, (*data))
 
 
 async def main():
