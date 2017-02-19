@@ -1,7 +1,7 @@
 SELECT
 
 id AS "apiId",
-relationships->'player'->'data'->>'id' AS "playerId",
+relationships->'player'->'data'->>'id' AS "player_apiId",
 
 attributes->>'actor' AS "hero",
 (attributes->'stats'->>'assists')::int AS "assists",
