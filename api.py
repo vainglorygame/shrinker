@@ -28,7 +28,7 @@ class Processor(object):
         self._queries = {}
         self._srcpool = self._destpool = None
 
-    def setup(self):
+    async def setup(self):
         """Load .sql files from queries/ directory.
         File name is the table to insert into."""
         self._queries = {}
@@ -42,23 +42,91 @@ class Processor(object):
                 logging.info("loaded query for '%s'", table)
                 self._queries[table] = file.read()
 
+        # prepare worker queue
+        async with self._srcpool.acquire() as con:
+            await con.execute("""
+                CREATE TABLE IF NOT EXISTS processjobs
+                    (id SERIAL, tablename TEXT, finished BOOL)
+                """)
+            # purge failed jobs from last time and retry
+            await con.execute("DELETE FROM processjobs WHERE finished=false")
+
     async def connect(self, source, dest):
         """Connect to database by arguments."""
         self._srcpool = await asyncpg.create_pool(**source)
         self._destpool = await asyncpg.create_pool(**dest)
 
-    async def run(self, stop_after=-1):
-        """Execute a function for each row that is fetched with query."""
-        # TODO unnest
+    async def acquire_job(self):
+        """Reserve a job and return (id, table)."""
+        async with self._srcpool.acquire() as con:
+            while True:
+                try:
+                    async with con.transaction(isolation="serializable"):
+                        # select us our job
+
+                        table_name = await con.fetchval("""
+                        SELECT table_name
+                        FROM (
+                          SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND
+                          (table_name ~ '^(match|roster|participant)_\w{2,3}_\d{4}_\d{2}_\d{2}$'
+                           OR table_name ~ '^(player|team)_\w{2,3}$')
+                        ) AS table_names
+                        WHERE table_name NOT IN
+                        (SELECT tablename FROM processjobs)
+                        """)
+                        if table_name == None:
+                            logging.warn("no jobs available")
+                            return (None, None)
+
+                        # store our job as pending
+                        jobid = await con.fetchval("""
+                            INSERT INTO processjobs(tablename, finished)
+                            VALUES ($1, FALSE)
+                            RETURNING id
+                        """, table_name)
+                        # exit loop
+                        return (jobid, table_name)
+                except asyncpg.exceptions.SerializationError:
+                    # job is being picked up by another worker, try again
+                    pass
+
+    async def run_job(self):
+        """Processes all data in table `table_name`."""
+        # reserve one job
+        jobid, table_name = await self.acquire_job()
+        assert jobid is not None
+        logging.info("%s: processing '%s'", jobid, table_name)
+
+        # process.
+        query_name = table_name.split("_")[0]  # `match`
         async with self._srcpool.acquire() as srccon:
             async with self._destpool.acquire() as destcon:
-                for table, query in self._queries.items():
-                    logging.info("running query for '%s'", table)
-                    stop_after -= 1  # TODO for debugging, don't process whole table
-                    async with srccon.transaction():
-                        async with destcon.transaction():
-                            async for rec in srccon.cursor(query):
-                                await self.into(destcon, rec, table)
+                # load SQL
+                # replace generic `FROM` by `FROM partition`
+                query = self._queries[query_name].replace(
+                    "FROM \"" + query_name + "\"",
+                    "FROM \"" + table_name + "\""
+                )
+                logging.debug("%s: using query '%s'", jobid, query_name)
+                async with srccon.transaction():
+                    async with destcon.transaction():
+                        async for rec in srccon.cursor(query):
+                            # loop over src, insert into dest
+                            await self.into(destcon, rec, query_name)
+
+    async def run(self):
+        """Execute a function for each row that is fetched with query."""
+        async def worker():
+            """Spawn tasks forever."""
+            try:
+                await self.run_job()
+            except AssertionError:
+                logging.info("worker idling")
+                await asyncio.sleep(30)
+            asyncio.ensure_future(worker())
+
+        for _ in range(5):
+            asyncio.ensure_future(worker())
 
     async def into(self, conn, data, table):
         """Insert a named tuple into a table."""
@@ -73,9 +141,10 @@ class Processor(object):
 async def main():
     pr = Processor()
     await pr.connect(source_db, dest_db)
-    pr.setup()
-    await pr.run(stop_after=1000)
+    await pr.setup()
+    await pr.run()
 
 logging.basicConfig(level=logging.DEBUG)
 loop = asyncio.get_event_loop()
 loop.run_until_complete(main())
+loop.run_forever()

@@ -14,4 +14,4 @@ relationships->'participants'->'data'->0->>'id' AS "participant_1",
 relationships->'participants'->'data'->1->>'id' AS "participant_2",
 relationships->'participants'->'data'->2->>'id' AS "participant_3"
 
-FROM roster
+FROM "roster"

@@ -12,4 +12,4 @@ attributes->'stats'->>'queue' AS "queue",
 relationships->'rosters'->'data'->0->>'id' as roster_1,
 relationships->'rosters'->'data'->1->>'id' as roster_2
 
-FROM match
+FROM "match"

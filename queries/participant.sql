@@ -25,4 +25,4 @@ attributes->'stats'->'itemSells' AS "itemSells",
 attributes->'stats'->'itemUses' AS "itemUses",
 attributes->'stats'->'items' AS "items"
 
-FROM participant
+FROM "participant"
