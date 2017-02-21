@@ -1,7 +1,7 @@
 SELECT
 
 id AS "apiId",
-relationships->'player'->'data'->>'id' AS "player_apiId",
+relationships->'player'->'data'->>'id' AS "playerId",
 
 attributes->>'actor' AS "hero",
 (attributes->'stats'->>'assists')::int AS "assists",
@@ -25,4 +25,4 @@ attributes->'stats'->'itemSells' AS "itemSells",
 attributes->'stats'->'itemUses' AS "itemUses",
 attributes->'stats'->'items' AS "items"
 
-FROM participant
+FROM "participant"

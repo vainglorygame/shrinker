@@ -12,4 +12,4 @@ attributes->>'name' AS "name",
 
 0 AS "streak"
 
-FROM player
+FROM "player"
