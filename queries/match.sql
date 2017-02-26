@@ -1,15 +1,15 @@
 SELECT
 
-id AS "apiId",
-(attributes->>'createdAt')::timestamp as "createdAt",
-(attributes->>'duration')::int AS "duration",
-attributes->>'gameMode' AS "gameMode",
-COALESCE(NULLIF(attributes->>'patchVersion', ''), '0') AS "patchVersion",
-attributes->>'shardId' AS "shardId",
-attributes->'stats'->>'endGameReason' AS "endGameReason",
-attributes->'stats'->>'queue' AS "queue" --,
+match.id AS "apiId",
+(match.data->'data'->'attributes'->>'createdAt')::timestamp as "createdAt",
+(match.data->'data'->'attributes'->>'duration')::int AS "duration",
+match.data->'data'->'attributes'->>'gameMode' AS "gameMode",
+COALESCE(NULLIF(match.data->'data'->'attributes'->>'patchVersion', ''), '0') AS "patchVersion",
+match.data->'data'->'attributes'->>'shardId' AS "shardId",
+match.data->'data'->'attributes'->'stats'->>'endGameReason' AS "endGameReason",
+match.data->'data'->'attributes'->'stats'->>'queue' AS "queue",
 
---relationships->'rosters'->'data'->0->>'id' as "roster_1",
---relationships->'rosters'->'data'->1->>'id' as "roster_2"
+match.data->'relations'->0->'data'->>'id' as "roster_1",
+match.data->'relations'->1->'data'->>'id' as "roster_2"
 
-FROM "match"
+FROM match WHERE id=$1
