@@ -1,10 +1,14 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
+import asyncio
 import os
 import glob
 import logging
-import asyncio
+import json
 import asyncpg
+
+import joblib.joblib
+
 
 source_db = {
     "host": os.environ.get("POSTGRESQL_SOURCE_HOST") or "vaindock_postgres_raw",
@@ -23,128 +27,119 @@ dest_db = {
 }
 
 
-class Processor(object):
+class Worker(object):
     def __init__(self):
+        self._queue = None
+        self._srcpool = None
+        self._destpool = None
         self._queries = {}
-        self._srcpool = self._destpool = None
+
+    async def connect(self, sourcea, desta):
+        """Connect to database."""
+        logging.info("connecting to database")
+        self._queue = joblib.joblib.JobQueue()
+        await self._queue.connect(**sourcea)
+        await self._queue.setup()
+        self._srcpool = await asyncpg.create_pool(**sourcea)
+        self._destpool = await asyncpg.create_pool(**desta)
 
     async def setup(self):
-        """Load .sql files from queries/ directory.
-        File name is the table to insert into."""
-        self._queries = {}
+        """Initialize the database."""
         scriptroot = os.path.realpath(
             os.path.join(os.getcwd(), os.path.dirname(__file__)))
-        # glob *.sql
-        for fp in glob.glob(scriptroot + "/queries/*.sql"):
+        for path in glob.glob(scriptroot + "/queries/*.sql"):
             # utf-8-sig is used by pgadmin, doesn't hurt to specify
-            with open(fp, "r", encoding="utf-8-sig") as file:
-                table = os.path.splitext(os.path.basename(fp))[0]
-                logging.info("loaded query for '%s'", table)
+            # file names: raw target table
+            table = os.path.splitext(os.path.basename(path))[0]
+            with open(path, "r", encoding="utf-8-sig") as file:
                 self._queries[table] = file.read()
+                logging.info("loaded query '%s'", table)
+        logging.info("creating index")
+        async with self._destpool.acquire() as con:
+            async with con.transaction():
+                await con.execute("CREATE UNIQUE INDEX ON match(\"apiId\")")
+                await con.execute("CREATE UNIQUE INDEX ON player(\"apiId\")")
 
-        # prepare worker queue
-        async with self._srcpool.acquire() as con:
-            await con.execute("""
-                CREATE TABLE IF NOT EXISTS processjobs
-                    (id SERIAL, tablename TEXT, finished BOOL)
-                """)
-            # purge failed jobs from last time and retry
-            await con.execute("DELETE FROM processjobs WHERE finished=false")
-
-    async def connect(self, source, dest):
-        """Connect to database by arguments."""
-        self._srcpool = await asyncpg.create_pool(**source)
-        self._destpool = await asyncpg.create_pool(**dest)
-
-    async def acquire_job(self):
-        """Reserve a job and return (id, table)."""
-        async with self._srcpool.acquire() as con:
-            while True:
-                try:
-                    async with con.transaction(isolation="serializable"):
-                        # select us our job
-
-                        table_name = await con.fetchval("""
-                        SELECT table_name
-                        FROM (
-                          SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND
-                          (table_name ~ '^(match|roster|participant)_\w{2,3}_\d{4}_\d{2}_\d{2}$'
-                           OR table_name ~ '^(player|team)_\w{2,3}$')
-                        ) AS table_names
-                        WHERE table_name NOT IN
-                        (SELECT tablename FROM processjobs)
-                        """)
-                        if table_name == None:
-                            logging.warn("no jobs available")
-                            return (None, None)
-
-                        # store our job as pending
-                        jobid = await con.fetchval("""
-                            INSERT INTO processjobs(tablename, finished)
-                            VALUES ($1, FALSE)
-                            RETURNING id
-                        """, table_name)
-                        # exit loop
-                        return (jobid, table_name)
-                except asyncpg.exceptions.SerializationError:
-                    # job is being picked up by another worker, try again
-                    pass
-
-    async def run_job(self):
-        """Processes all data in table `table_name`."""
-        # reserve one job
-        jobid, table_name = await self.acquire_job()
-        assert jobid is not None
-        logging.info("%s: processing '%s'", jobid, table_name)
-
-        # process.
-        query_name = table_name.split("_")[0]  # `match`
+    async def _execute_job(self, jobid, payload):
+        """Finish a job."""
+        object_id = payload["id"]
+        explicit_player = payload["playername"]
         async with self._srcpool.acquire() as srccon:
             async with self._destpool.acquire() as destcon:
-                # load SQL
-                # replace generic `FROM` by `FROM partition`
-                query = self._queries[query_name].replace(
-                    "FROM \"" + query_name + "\"",
-                    "FROM \"" + table_name + "\""
-                )
-                logging.debug("%s: using query '%s'", jobid, query_name)
+                logging.debug("%s: processing '%s'", jobid, object_id)
                 async with srccon.transaction():
                     async with destcon.transaction():
-                        async for rec in srccon.cursor(query):
-                            # loop over src, insert into dest
-                            await self.into(destcon, rec, query_name)
+                        # 1 object in raw : n objects in web
+                        for table, query in self._queries.items():
+                            logging.debug("%s: running '%s' query",
+                                          jobid, table)
+                            # fetch from raw, converted to format for web table
+                            if table == "player":
+                                # upsert under special conditions
+                                data = await srccon.fetchrow(
+                                    query, object_id, explicit_player)
+                                await self._playerinto(destcon, data, table)
+                            else:
+                                data = await srccon.fetchrow(
+                                    query, object_id)
+                                # insert processed result into web table
+                                await self._into(destcon, data, table)
+                    data = await srccon.fetchrow(
+                        "DELETE FROM match WHERE id=$1", object_id)
 
-    async def run(self):
-        """Execute a function for each row that is fetched with query."""
-        async def worker():
-            """Spawn tasks forever."""
-            try:
-                await self.run_job()
-            except AssertionError:
-                logging.info("worker idling")
-                await asyncio.sleep(30)
-            asyncio.ensure_future(worker())
+    async def _playerinto(self, conn, data, table):
+        """Insert a player named tuple into a table.
+        Upserts specific columns."""
+        items = list(data.items())
+        keys, values = [x[0] for x in items], [x[1] for x in items]
+        placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
+        query = """
+            INSERT INTO player ("{0}") VALUES ({1})
+            ON CONFLICT("apiId") DO UPDATE SET ("{0}") = ({1})
+            WHERE player."lastMatchCreatedDate" < EXCLUDED."lastMatchCreatedDate"
+        """.format(
+            "\", \"".join(keys), ", ".join(placeholders))
+        await conn.execute(query, (*data))
 
-        for _ in range(5):
-            asyncio.ensure_future(worker())
-
-    async def into(self, conn, data, table):
+    async def _into(self, conn, data, table):
         """Insert a named tuple into a table."""
         items = list(data.items())
         keys, values = [x[0] for x in items], [x[1] for x in items]
         placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
-        query = "INSERT INTO {} (\"{}\") VALUES ({})".format(
+        query = "INSERT INTO {} (\"{}\") VALUES ({}) ON CONFLICT DO NOTHING".format(
             table, "\", \"".join(keys), ", ".join(placeholders))
         await conn.execute(query, (*data))
 
+    async def _work(self):
+        """Fetch a job and run it."""
+        jobid, payload, _ = await self._queue.acquire(jobtype="process")
+        if jobid is None:
+            raise LookupError("no jobs available")
+        logging.debug("%s: starting job", jobid)
+        await self._execute_job(jobid, payload)
+        await self._queue.finish(jobid)
+        logging.debug("%s: finished job", jobid)
 
-async def main():
-    pr = Processor()
-    await pr.connect(source_db, dest_db)
-    await pr.setup()
-    await pr.run()
+    async def run(self):
+        """Start jobs forever."""
+        while True:
+            try:
+                await self._work()
+            except LookupError:
+                logging.info("nothing to do, idling")
+                await asyncio.sleep(10)
+
+
+async def startup():
+    for _ in range(1):
+        worker = Worker()
+        await worker.connect(
+            source_db, dest_db
+        )
+        await worker.setup()
+        await worker.run()
 
 logging.basicConfig(level=logging.DEBUG)
 loop = asyncio.get_event_loop()
-loop.run_until_complete(main())
+loop.run_until_complete(startup())
 loop.run_forever()
