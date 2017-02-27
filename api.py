@@ -76,17 +76,18 @@ class Worker(object):
                             # fetch from raw, converted to format for web table
                             if table == "player":
                                 # upsert under special conditions
-                                data = await srccon.fetchrow(
+                                datas = await srccon.fetch(
                                     query, object_id, explicit_player)
-                                if data["name"] == explicit_player:
+                                for data in datas:
                                     await self._playerinto(destcon, data,
-                                                           table,
-                                                           True)
+                                                               table,
+                                        data["name"] == explicit_player)
                             else:
-                                data = await srccon.fetchrow(
+                                datas = await srccon.fetch(
                                     query, object_id)
-                                # insert processed result into web table
-                                await self._into(destcon, data, table)
+                                for data in datas:
+                                    # insert processed result into web table
+                                    await self._into(destcon, data, table)
                     data = await srccon.fetchrow(
                         "DELETE FROM match WHERE id=$1", object_id)
 
