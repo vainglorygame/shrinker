@@ -129,15 +129,18 @@ class Worker(object):
                 logging.info("nothing to do, idling")
                 await asyncio.sleep(10)
 
+    async def start(self, number=1):
+        """Start jobs in background."""
+        for _ in range(number):
+            asyncio.ensure_future(self.run())
 
 async def startup():
-    for _ in range(1):
-        worker = Worker()
-        await worker.connect(
-            source_db, dest_db
-        )
-        await worker.setup()
-        await worker.run()
+    worker = Worker()
+    await worker.connect(
+        source_db, dest_db
+    )
+    await worker.setup()
+    await worker.start(10)
 
 logging.basicConfig(level=logging.DEBUG)
 loop = asyncio.get_event_loop()
