@@ -2,11 +2,13 @@ WITH rosters AS (SELECT
   JSONB_ARRAY_ELEMENTS(match.data->'relations') AS roster
 FROM match WHERE id=$1),
 participants AS (SELECT
+  rosters.roster->'data'->>'id' AS rosterid,
   JSONB_ARRAY_ELEMENTS(rosters.roster->'relations') AS participant
 FROM rosters)
 SELECT
 
 participant->'data'->>'id' AS "apiId",
+rosterid AS "roster_apiId",
 participant->'relations'->0->'data'->>'id' AS "player_apiId",
 
 participant->'data'->'attributes'->>'actor' AS "hero",
