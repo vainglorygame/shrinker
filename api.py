@@ -60,7 +60,7 @@ class Worker(object):
                 await con.execute("CREATE UNIQUE INDEX ON match(\"apiId\")")
                 await con.execute("CREATE UNIQUE INDEX ON player(\"apiId\")")
 
-    async def _execute_job(self, jobid, payload):
+    async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
         object_id = payload["id"]
         explicit_player = payload["playername"]
@@ -74,25 +74,51 @@ class Worker(object):
                             logging.debug("%s: running '%s' query",
                                           jobid, table)
                             # fetch from raw, converted to format for web table
+                            # TODO refactor - duplicated messy code
                             if table == "player":
                                 # upsert under special conditions
                                 datas = await srccon.fetch(
                                     query, object_id, explicit_player)
                                 for data in datas:
-                                    await self._playerinto(destcon, data,
-                                                               table,
+                                    obj_id = await self._playerinto(
+                                        destcon, data, table,
                                         data["name"] == explicit_player)
+
+                                    if obj_id:
+                                        # run web->web queries
+                                        payload = {
+                                            "type": table,
+                                            "id": obj_id
+                                        }
+                                        await self._queue.request(
+                                            jobtype="compile",
+                                            payload=payload,
+                                            priority=priority)
                             else:
                                 datas = await srccon.fetch(
                                     query, object_id)
                                 for data in datas:
                                     # insert processed result into web table
-                                    await self._into(destcon, data, table)
+                                    obj_id = await self._into(
+                                        destcon, data, table)
+
+                                    if obj_id:
+                                        # run web->web queries
+                                        payload = {
+                                            "type": table,
+                                            "id": obj_id
+                                        }
+                                        await self._queue.request(
+                                            jobtype="compile",
+                                            payload=payload,
+                                            priority=priority)
+
                     data = await srccon.fetchrow(
                         "DELETE FROM match WHERE id=$1", object_id)
 
     async def _playerinto(self, conn, data, table, do_upsert_date):
-        """Upserts a player named tuple into a table."""
+        """Upsert a player named tuple into a table.
+        Return the object id."""
         if do_upsert_date:
             # explicit update for this player -> store
             lmcd = data["lastMatchCreatedDate"]
@@ -108,9 +134,10 @@ class Worker(object):
             VALUES ({1}, 'epoch'::timestamp)
             ON CONFLICT("apiId") DO UPDATE SET ("{0}") = ({1})
             WHERE player.played < EXCLUDED.played
+            RETURNING id
         """.format(
             "\", \"".join(keys), ", ".join(placeholders))
-        await conn.execute(query, *data.values())
+        obj_id = await conn.fetchval(query, *data.values())
 
         if do_upsert_date:
             # upsert lmcd because it was an explicit request
@@ -119,22 +146,26 @@ class Worker(object):
                 WHERE player."lastMatchCreatedDate" < $1
             """, lmcd)
 
+        return obj_id
+
     async def _into(self, conn, data, table):
-        """Insert a named tuple into a table."""
+        """Insert a named tuple into a table.
+        Return the object id."""
         items = list(data.items())
         keys, values = [x[0] for x in items], [x[1] for x in items]
         placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
-        query = "INSERT INTO {} (\"{}\") VALUES ({}) ON CONFLICT DO NOTHING".format(
+        query = "INSERT INTO {} (\"{}\") VALUES ({}) ON CONFLICT DO NOTHING RETURNING id".format(
             table, "\", \"".join(keys), ", ".join(placeholders))
-        await conn.execute(query, (*data))
+        return await conn.fetchval(query, (*data))
 
     async def _work(self):
         """Fetch a job and run it."""
-        jobid, payload, _ = await self._queue.acquire(jobtype="process")
+        jobid, payload, priority = await self._queue.acquire(
+            jobtype="process")
         if jobid is None:
             raise LookupError("no jobs available")
         logging.debug("%s: starting job", jobid)
-        await self._execute_job(jobid, payload)
+        await self._execute_job(jobid, payload, priority)
         await self._queue.finish(jobid)
         logging.debug("%s: finished job", jobid)
 
