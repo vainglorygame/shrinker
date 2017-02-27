@@ -1,8 +1,10 @@
 WITH rosters AS (SELECT
+  id AS matchid,
   JSONB_ARRAY_ELEMENTS(match.data->'relations') AS roster
 FROM match WHERE id=$1)
 SELECT
-roster->'data'->>'id' as "apiId",
+roster->'data'->>'id' AS "apiId",
+matchid AS "match_apiId",
 (roster->'data'->'attributes'->'stats'->>'acesEarned')::int AS "acesEarned",
 (roster->'data'->'attributes'->'stats'->>'gold')::int AS "gold",
 (roster->'data'->'attributes'->'stats'->>'heroKills')::int AS "heroKills",
