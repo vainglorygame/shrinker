@@ -78,7 +78,10 @@ class Worker(object):
                                 # upsert under special conditions
                                 data = await srccon.fetchrow(
                                     query, object_id, explicit_player)
-                                await self._playerinto(destcon, data, table)
+                                if data["name"] == explicit_player:
+                                    await self._playerinto(destcon, data,
+                                                           table,
+                                                           True)
                             else:
                                 data = await srccon.fetchrow(
                                     query, object_id)
@@ -87,19 +90,33 @@ class Worker(object):
                     data = await srccon.fetchrow(
                         "DELETE FROM match WHERE id=$1", object_id)
 
-    async def _playerinto(self, conn, data, table):
-        """Insert a player named tuple into a table.
-        Upserts specific columns."""
+    async def _playerinto(self, conn, data, table, do_upsert_date):
+        """Upserts a player named tuple into a table."""
+        if do_upsert_date:
+            # explicit update for this player -> store
+            lmcd = data["lastMatchCreatedDate"]
+        data = dict(data)
+        del data["lastMatchCreatedDate"]
+
         items = list(data.items())
         keys, values = [x[0] for x in items], [x[1] for x in items]
         placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
+        # upsert all values except lmcd if they are more recent
         query = """
-            INSERT INTO player ("{0}") VALUES ({1})
+            INSERT INTO player ("{0}", "lastMatchCreatedDate")
+            VALUES ({1}, 'epoch'::timestamp)
             ON CONFLICT("apiId") DO UPDATE SET ("{0}") = ({1})
-            WHERE player."lastMatchCreatedDate" < EXCLUDED."lastMatchCreatedDate"
+            WHERE player.played < EXCLUDED.played
         """.format(
             "\", \"".join(keys), ", ".join(placeholders))
-        await conn.execute(query, (*data))
+        await conn.execute(query, *data.values())
+
+        if do_upsert_date:
+            # upsert lmcd because it was an explicit request
+            await conn.execute("""
+                UPDATE player SET "lastMatchCreatedDate"=$1
+                WHERE player."lastMatchCreatedDate" < $1
+            """, lmcd)
 
     async def _into(self, conn, data, table):
         """Insert a named tuple into a table."""
