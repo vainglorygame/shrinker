@@ -128,7 +128,7 @@ class Worker(object):
             VALUES ({1}, 'epoch'::timestamp)
             ON CONFLICT("apiId") DO UPDATE SET ("{0}") = ({1})
             WHERE player.played < EXCLUDED.played
-            RETURNING id
+            RETURNING "apiId"
         """.format(
             "\", \"".join(keys), ", ".join(placeholders))
         objid = await conn.fetchval(query, *data.values())
@@ -148,7 +148,7 @@ class Worker(object):
         items = list(data.items())
         keys, values = [x[0] for x in items], [x[1] for x in items]
         placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
-        query = "INSERT INTO {} (\"{}\") VALUES ({}) ON CONFLICT DO NOTHING RETURNING id".format(
+        query = "INSERT INTO {} (\"{}\") VALUES ({}) ON CONFLICT DO NOTHING RETURNING \"apiId\"".format(
             table, "\", \"".join(keys), ", ".join(placeholders))
         return await conn.fetchval(query, (*data))
 
