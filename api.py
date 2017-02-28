@@ -132,7 +132,7 @@ class Worker(object):
             RETURNING id
         """.format(
             "\", \"".join(keys), ", ".join(placeholders))
-        await conn.execute(query, *data.values())
+        objid = await conn.fetchval(query, *data.values())
 
         if do_upsert_date:
             # upsert lmcd because it was an explicit request
@@ -140,6 +140,8 @@ class Worker(object):
                 UPDATE player SET "lastMatchCreatedDate"=$1
                 WHERE player."lastMatchCreatedDate" < $1
             """, lmcd)
+
+        return objid
 
     async def _into(self, conn, data, table):
         """Insert a named tuple into a table.
@@ -149,7 +151,7 @@ class Worker(object):
         placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
         query = "INSERT INTO {} (\"{}\") VALUES ({}) ON CONFLICT DO NOTHING RETURNING id".format(
             table, "\", \"".join(keys), ", ".join(placeholders))
-        await conn.execute(query, (*data))
+        return await conn.fetchval(query, (*data))
 
     async def _work(self):
         """Fetch a job and run it."""
