@@ -54,11 +54,6 @@ class Worker(object):
             with open(path, "r", encoding="utf-8-sig") as file:
                 self._queries[table] = file.read()
                 logging.info("loaded query '%s'", table)
-        logging.info("creating index")
-        async with self._destpool.acquire() as con:
-            async with con.transaction():
-                await con.execute("CREATE UNIQUE INDEX ON match(\"apiId\")")
-                await con.execute("CREATE UNIQUE INDEX ON player(\"apiId\")")
 
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
