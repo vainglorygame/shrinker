@@ -44,12 +44,15 @@ class Worker(object):
         """Initialize the database."""
         scriptroot = os.path.realpath(
             os.path.join(os.getcwd(), os.path.dirname(__file__)))
-        for path in glob.glob(scriptroot + "/queries/*.sql"):
+        for path in glob.glob(scriptroot + "/queries/*/*.sql"):
             # utf-8-sig is used by pgadmin, doesn't hurt to specify
-            # file names: web target table
-            table = os.path.splitext(os.path.basename(path))[0]
+            # directory names: web target table
+            table = os.path.basename(os.path.dirname(path))
             with open(path, "r", encoding="utf-8-sig") as file:
-                self._queries[table] = file.read()
+                try:
+                    self._queries[table].append(file.read())
+                except KeyError:
+                    self._queries[table] = [file.read()]
                 logging.info("loaded query '%s'", table)
 
     async def _execute_job(self, jobid, payload):
@@ -61,9 +64,9 @@ class Worker(object):
         async with self._pool.acquire() as con:
             logging.debug("%s: compiling '%s' from '%s'",
                           jobid, object_id, table)
-            async with con.transaction():
-                await con.execute(self._queries[table],
-                                  object_id)
+            for query in self._queries[table]:
+                async with con.transaction():
+                    await con.execute(query, object_id)
 
     async def _work(self):
         """Fetch a job and run it."""
