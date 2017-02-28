@@ -82,7 +82,7 @@ class Worker(object):
             try:
                 await self._work()
             except LookupError:
-                await asyncio.sleep(10)
+                await asyncio.sleep(1)
 
     async def start(self, number=1):
         """Start jobs in background."""
@@ -93,7 +93,7 @@ async def startup():
     worker = Worker()
     await worker.connect(db_config, queue_db)
     await worker.setup()
-    await worker.start(10)
+    await worker.start(4)
 
 logging.basicConfig(level=logging.DEBUG)
 loop = asyncio.get_event_loop()
