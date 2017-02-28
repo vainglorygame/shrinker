@@ -57,7 +57,6 @@ class Worker(object):
         object_id = payload["id"]
         table = payload["type"]
         if table not in self._queries:
-            logging.debug("%s: nothing to do", jobid)
             return
         async with self._pool.acquire() as con:
             logging.debug("%s: compiling '%s' from '%s'",
@@ -71,10 +70,8 @@ class Worker(object):
         jobid, payload, _ = await self._queue.acquire(jobtype="compile")
         if jobid is None:
             raise LookupError("no jobs available")
-        logging.debug("%s: starting job", jobid)
         await self._execute_job(jobid, payload)
         await self._queue.finish(jobid)
-        logging.debug("%s: finished job", jobid)
 
     async def run(self):
         """Start jobs forever."""
@@ -82,7 +79,6 @@ class Worker(object):
             try:
                 await self._work()
             except LookupError:
-                logging.info("nothing to do, idling")
                 await asyncio.sleep(10)
 
     async def start(self, number=1):
