@@ -61,7 +61,6 @@ class Worker(object):
         explicit_player = payload["playername"]
         async with self._srcpool.acquire() as srccon:
             async with self._destpool.acquire() as destcon:
-                logging.debug("%s: processing '%s'", jobid, object_id)
                 async with srccon.transaction():
                     async with destcon.transaction():
                         # 1 object in raw : n objects in web
@@ -159,10 +158,8 @@ class Worker(object):
             jobtype="process")
         if jobid is None:
             raise LookupError("no jobs available")
-        logging.debug("%s: starting job", jobid)
         await self._execute_job(jobid, payload, priority)
         await self._queue.finish(jobid)
-        logging.debug("%s: finished job", jobid)
 
     async def run(self):
         """Start jobs forever."""
@@ -170,7 +167,6 @@ class Worker(object):
             try:
                 await self._work()
             except LookupError:
-                logging.info("nothing to do, idling")
                 await asyncio.sleep(10)
 
     async def start(self, number=1):
