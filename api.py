@@ -36,7 +36,7 @@ class Worker(object):
 
     async def connect(self, sourcea, desta):
         """Connect to database."""
-        logging.info("connecting to database")
+        logging.warning("connecting to database")
         self._queue = joblib.joblib.JobQueue()
         await self._queue.connect(**sourcea)
         await self._queue.setup()
@@ -182,7 +182,15 @@ async def startup():
     await worker.setup()
     await worker.start(4)
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    filename="logs/processor.log",
+    filemode="a",
+    level=logging.DEBUG
+)
+console = logging.StreamHandler()
+console.setLevel(logging.WARNING)
+logging.getLogger("").addHandler(console)
+
 loop = asyncio.get_event_loop()
 loop.run_until_complete(startup())
 loop.run_forever()
