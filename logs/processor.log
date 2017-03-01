@@ -1,0 +1,155 @@
+DEBUG:asyncio:Using selector: EpollSelector
+WARNING:root:connecting to database
+INFO:root:loaded query 'match'
+INFO:root:loaded query 'player'
+INFO:root:loaded query 'roster'
+INFO:root:loaded query 'participant'
+DEBUG:root:820: running 'match' query
+DEBUG:root:812: running 'match' query
+DEBUG:root:812: running 'player' query
+DEBUG:root:813: running 'match' query
+DEBUG:root:813: running 'player' query
+DEBUG:root:820: running 'player' query
+DEBUG:root:812: running 'roster' query
+DEBUG:root:814: running 'match' query
+DEBUG:root:814: running 'player' query
+DEBUG:root:812: running 'participant' query
+DEBUG:root:813: running 'roster' query
+DEBUG:root:813: running 'participant' query
+DEBUG:root:815: running 'match' query
+DEBUG:root:815: running 'player' query
+DEBUG:root:816: running 'match' query
+DEBUG:root:816: running 'player' query
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished coro=<Worker.run() done, defined at /apps/api/api.py:164> exception=DeadlockDetectedError('deadlock detected',)>
+Traceback (most recent call last):
+  File "/apps/api/api.py", line 168, in run
+    await self._work()
+  File "/apps/api/api.py", line 161, in _work
+    await self._execute_job(jobid, payload, priority)
+  File "/apps/api/api.py", line 79, in _execute_job
+    data["name"] == explicit_player)
+  File "/apps/api/api.py", line 134, in _playerinto
+    objid = await conn.fetchval(query, *data.values())
+  File "/usr/local/lib/python3.6/site-packages/asyncpg/connection.py", line 289, in fetchval
+    False, timeout)
+  File "asyncpg/protocol/protocol.pyx", line 165, in bind_execute (asyncpg/protocol/protocol.c:55643)
+asyncpg.exceptions.DeadlockDetectedError: deadlock detected
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished coro=<Worker.run() done, defined at /apps/api/api.py:164> exception=DeadlockDetectedError('deadlock detected',)>
+Traceback (most recent call last):
+  File "/apps/api/api.py", line 168, in run
+    await self._work()
+  File "/apps/api/api.py", line 161, in _work
+    await self._execute_job(jobid, payload, priority)
+  File "/apps/api/api.py", line 79, in _execute_job
+    data["name"] == explicit_player)
+  File "/apps/api/api.py", line 134, in _playerinto
+    objid = await conn.fetchval(query, *data.values())
+  File "/usr/local/lib/python3.6/site-packages/asyncpg/connection.py", line 289, in fetchval
+    False, timeout)
+  File "asyncpg/protocol/protocol.pyx", line 165, in bind_execute (asyncpg/protocol/protocol.c:55643)
+asyncpg.exceptions.DeadlockDetectedError: deadlock detected
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished coro=<Worker.run() done, defined at /apps/api/api.py:164> exception=DeadlockDetectedError('deadlock detected',)>
+Traceback (most recent call last):
+  File "/apps/api/api.py", line 168, in run
+    await self._work()
+  File "/apps/api/api.py", line 161, in _work
+    await self._execute_job(jobid, payload, priority)
+  File "/apps/api/api.py", line 79, in _execute_job
+    data["name"] == explicit_player)
+  File "/apps/api/api.py", line 141, in _playerinto
+    """, lmcd)
+  File "/usr/local/lib/python3.6/site-packages/asyncpg/connection.py", line 174, in execute
+    True, timeout)
+  File "asyncpg/protocol/protocol.pyx", line 165, in bind_execute (asyncpg/protocol/protocol.c:55643)
+asyncpg.exceptions.DeadlockDetectedError: deadlock detected
+DEBUG:root:816: running 'roster' query
+DEBUG:root:816: running 'participant' query
+DEBUG:root:817: running 'match' query
+DEBUG:root:817: running 'player' query
+DEBUG:root:817: running 'roster' query
+DEBUG:root:817: running 'participant' query
+DEBUG:root:818: running 'match' query
+DEBUG:root:818: running 'player' query
+DEBUG:root:818: running 'roster' query
+DEBUG:root:818: running 'participant' query
+DEBUG:root:819: running 'match' query
+DEBUG:root:819: running 'player' query
+DEBUG:root:819: running 'roster' query
+DEBUG:root:819: running 'participant' query
+DEBUG:root:880: running 'match' query
+DEBUG:root:880: running 'player' query
+DEBUG:root:880: running 'roster' query
+DEBUG:root:880: running 'participant' query
+DEBUG:root:881: running 'match' query
+DEBUG:root:881: running 'player' query
+DEBUG:root:881: running 'roster' query
+DEBUG:root:881: running 'participant' query
+DEBUG:root:882: running 'match' query
+DEBUG:root:882: running 'player' query
+DEBUG:root:882: running 'roster' query
+DEBUG:root:882: running 'participant' query
+DEBUG:root:883: running 'match' query
+DEBUG:root:883: running 'player' query
+DEBUG:root:883: running 'roster' query
+DEBUG:root:883: running 'participant' query
+DEBUG:root:884: running 'match' query
+DEBUG:root:884: running 'player' query
+DEBUG:root:884: running 'roster' query
+DEBUG:root:884: running 'participant' query
+DEBUG:asyncio:Using selector: EpollSelector
+WARNING:root:connecting to database
+DEBUG:asyncio:Using selector: EpollSelector
+WARNING:root:connecting to database
+INFO:root:loaded query 'match'
+INFO:root:loaded query 'player'
+INFO:root:loaded query 'roster'
+INFO:root:loaded query 'participant'
+DEBUG:asyncio:Using selector: EpollSelector
+WARNING:root:connecting to database
+INFO:root:loaded query 'match'
+INFO:root:loaded query 'player'
+INFO:root:loaded query 'roster'
+INFO:root:loaded query 'participant'
+DEBUG:root:928: running 'match' query
+DEBUG:root:928: running 'player' query
+DEBUG:root:928: running 'roster' query
+DEBUG:root:929: running 'match' query
+DEBUG:root:929: running 'player' query
+DEBUG:root:930: running 'match' query
+DEBUG:root:930: running 'player' query
+DEBUG:root:928: running 'participant' query
+DEBUG:root:931: running 'match' query
+DEBUG:root:931: running 'player' query
+DEBUG:root:929: running 'roster' query
+DEBUG:root:929: running 'participant' query
+DEBUG:root:932: running 'match' query
+DEBUG:root:932: running 'player' query
+DEBUG:root:931: running 'roster' query
+DEBUG:root:931: running 'participant' query
+DEBUG:root:930: running 'roster' query
+DEBUG:root:930: running 'participant' query
+DEBUG:root:932: running 'roster' query
+DEBUG:root:932: running 'participant' query
+DEBUG:root:977: running 'match' query
+DEBUG:root:977: running 'player' query
+DEBUG:root:977: running 'roster' query
+DEBUG:root:977: running 'participant' query
+DEBUG:root:978: running 'match' query
+DEBUG:root:978: running 'player' query
+DEBUG:root:974: running 'match' query
+DEBUG:root:978: running 'roster' query
+DEBUG:root:974: running 'player' query
+DEBUG:root:978: running 'participant' query
+DEBUG:root:975: running 'match' query
+DEBUG:root:975: running 'player' query
+DEBUG:root:974: running 'roster' query
+DEBUG:root:974: running 'participant' query
+DEBUG:root:976: running 'match' query
+DEBUG:root:976: running 'player' query
+DEBUG:root:975: running 'roster' query
+DEBUG:root:975: running 'participant' query
+DEBUG:root:976: running 'roster' query
+DEBUG:root:976: running 'participant' query

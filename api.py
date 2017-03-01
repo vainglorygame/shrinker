@@ -183,7 +183,10 @@ async def startup():
     await worker.start(4)
 
 logging.basicConfig(
-    filename="logs/processor.log",
+    filename=os.path.realpath(
+        os.path.join(os.getcwd(),
+                     os.path.dirname(__file__))) +
+        "/logs/processor.log",
     filemode="a",
     level=logging.DEBUG
 )
