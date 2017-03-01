@@ -11,7 +11,7 @@ where
     match."apiId" = roster."match_apiId" and
     roster."apiId" = participant."roster_apiId" and
     participant."player_apiId" = player."apiId" and
-    player."apiId" = '6eab29f6-eed5-11e6-ba5f-068789513eb5')
+    player."apiId" = $1)
 select
     (select distinct(player_api_id) from plr),
     (select count(*) as played from plr), 
