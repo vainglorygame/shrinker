@@ -93,7 +93,7 @@ async def startup():
     worker = Worker()
     await worker.connect(db_config, queue_db)
     await worker.setup()
-    await worker.start(4)
+    await worker.start(1)
 
 
 logging.basicConfig(
