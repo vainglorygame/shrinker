@@ -180,7 +180,7 @@ async def startup():
         source_db, dest_db
     )
     await worker.setup()
-    await worker.start(4)
+    await worker.start(1)
 
 logging.basicConfig(
     filename=os.path.realpath(
