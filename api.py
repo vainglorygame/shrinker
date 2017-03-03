@@ -136,9 +136,10 @@ class Worker(object):
         if do_upsert_date:
             # upsert lmcd because it was an explicit request
             await conn.execute("""
-                UPDATE player SET "lastMatchCreatedDate"=$1
-                WHERE player."lastMatchCreatedDate" < $1
-            """, lmcd)
+                UPDATE player SET "lastMatchCreatedDate"=$2
+                WHERE player."apiId"=$1 AND
+                player."lastMatchCreatedDate" < $2
+            """, objid, lmcd)
 
         return objid
 
