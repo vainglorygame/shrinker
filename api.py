@@ -95,6 +95,7 @@ class Worker(object):
                                     # insert processed result into web table
                                     obj_id = await self._into(
                                         destcon, data, table)
+                                    logging.debug("record processed")
 
                                     if obj_id:
                                         # run web->web queries
@@ -115,16 +116,16 @@ class Worker(object):
         Return the object id."""
         if do_upsert_date:
             # explicit update for this player -> store
-            lmcd = data["lastMatchCreatedDate"]
+            lmcd = data["last_match_created_date"]
         data = dict(data)
-        del data["lastMatchCreatedDate"]
+        del data["last_match_created_date"]
 
         items = list(data.items())
         keys, values = [x[0] for x in items], [x[1] for x in items]
         placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
         # upsert all values except lmcd if they are more recent
         query = """
-            INSERT INTO player ("{0}", "lastMatchCreatedDate")
+            INSERT INTO player ("{0}", "last_match_created_date")
             VALUES ({1}, 'epoch'::timestamp)
             ON CONFLICT("api_id") DO UPDATE SET ("{0}") = ({1})
             WHERE player.played < EXCLUDED.played
@@ -136,9 +137,9 @@ class Worker(object):
         if do_upsert_date:
             # upsert lmcd because it was an explicit request
             await conn.execute("""
-                UPDATE player SET "lastMatchCreatedDate"=$2
-                WHERE player."apiId"=$1 AND
-                player."lastMatchCreatedDate" < $2
+                UPDATE player SET "last_match_created_date"=$2
+                WHERE player."api_id"=$1 AND
+                player."last_match_created_date" < $2
             """, objid, lmcd)
 
         return objid
@@ -152,7 +153,6 @@ class Worker(object):
         query = "INSERT INTO {} (\"{}\") VALUES ({}) ON CONFLICT DO NOTHING RETURNING api_id".format(
             table, "\", \"".join(keys), ", ".join(placeholders))
         logging.debug(query)
-        logging.debug((*data))
         return await conn.fetchval(query, (*data))
 
     async def _work(self):
@@ -194,7 +194,7 @@ logging.basicConfig(
     level=logging.DEBUG
 )
 console = logging.StreamHandler()
-console.setLevel(logging.DEBUG)
+console.setLevel(logging.WARNING)
 logging.getLogger("").addHandler(console)
 
 loop = asyncio.get_event_loop()
