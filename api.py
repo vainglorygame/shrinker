@@ -7,7 +7,7 @@ import logging
 import json
 import asyncpg
 
-import joblib.joblib
+import joblib.worker
 
 queue_db = {
     "host": os.environ.get("POSTGRESQL_SOURCE_HOST") or "vaindock_postgres_raw",
@@ -26,18 +26,16 @@ db_config = {
 }
 
 
-class Worker(object):
+class Compiler(joblib.worker.Worker):
     def __init__(self):
-        self._queue = None
         self._pool = None
         self._queries = {}
+        super().__init__(jobtype="compile")
 
     async def connect(self, dbconf, queuedb):
         """Connect to database."""
         logging.warning("connecting to database")
-        self._queue = joblib.joblib.JobQueue()
-        await self._queue.connect(**queuedb)
-        await self._queue.setup()
+        await super().connect(**queuedb)
         self._pool = await asyncpg.create_pool(**dbconf)
 
     async def setup(self):
@@ -55,7 +53,7 @@ class Worker(object):
                     self._queries[table] = [file.read()]
                 logging.info("loaded query '%s'", table)
 
-    async def _execute_job(self, jobid, payload):
+    async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
         object_id = payload["id"]
         table = payload["type"]
@@ -68,29 +66,9 @@ class Worker(object):
                 async with con.transaction():
                     await con.execute(query, object_id)
 
-    async def _work(self):
-        """Fetch a job and run it."""
-        jobid, payload, _ = await self._queue.acquire(jobtype="compile")
-        if jobid is None:
-            raise LookupError("no jobs available")
-        await self._execute_job(jobid, payload)
-        await self._queue.finish(jobid)
-
-    async def run(self):
-        """Start jobs forever."""
-        while True:
-            try:
-                await self._work()
-            except LookupError:
-                await asyncio.sleep(1)
-
-    async def start(self, number=1):
-        """Start jobs in background."""
-        for _ in range(number):
-            asyncio.ensure_future(self.run())
 
 async def startup():
-    worker = Worker()
+    worker = Compiler()
     await worker.connect(db_config, queue_db)
     await worker.setup()
     await worker.start(1)
