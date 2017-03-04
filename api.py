@@ -126,9 +126,9 @@ class Worker(object):
         query = """
             INSERT INTO player ("{0}", "lastMatchCreatedDate")
             VALUES ({1}, 'epoch'::timestamp)
-            ON CONFLICT("apiId") DO UPDATE SET ("{0}") = ({1})
+            ON CONFLICT("api_id") DO UPDATE SET ("{0}") = ({1})
             WHERE player.played < EXCLUDED.played
-            RETURNING "apiId"
+            RETURNING "api_id"
         """.format(
             "\", \"".join(keys), ", ".join(placeholders))
         objid = await conn.fetchval(query, *data.values())
@@ -149,8 +149,10 @@ class Worker(object):
         items = list(data.items())
         keys, values = [x[0] for x in items], [x[1] for x in items]
         placeholders = ["${}".format(i) for i, _ in enumerate(values, 1)]
-        query = "INSERT INTO {} (\"{}\") VALUES ({}) ON CONFLICT DO NOTHING RETURNING \"apiId\"".format(
+        query = "INSERT INTO {} (\"{}\") VALUES ({}) ON CONFLICT DO NOTHING RETURNING api_id".format(
             table, "\", \"".join(keys), ", ".join(placeholders))
+        logging.debug(query)
+        logging.debug((*data))
         return await conn.fetchval(query, (*data))
 
     async def _work(self):
@@ -192,7 +194,7 @@ logging.basicConfig(
     level=logging.DEBUG
 )
 console = logging.StreamHandler()
-console.setLevel(logging.WARNING)
+console.setLevel(logging.DEBUG)
 logging.getLogger("").addHandler(console)
 
 loop = asyncio.get_event_loop()
