@@ -7,7 +7,7 @@ import logging
 import json
 import asyncpg
 
-import joblib.joblib
+import joblib.worker
 
 
 source_db = {
@@ -27,19 +27,17 @@ dest_db = {
 }
 
 
-class Worker(object):
+class Processor(joblib.worker.Worker):
     def __init__(self):
-        self._queue = None
         self._srcpool = None
         self._destpool = None
         self._queries = {}
+        super().__init__(jobtype="process")
 
     async def connect(self, sourcea, desta):
         """Connect to database."""
         logging.warning("connecting to database")
-        self._queue = joblib.joblib.JobQueue()
-        await self._queue.connect(**sourcea)
-        await self._queue.setup()
+        await super().connect(**sourcea)
         self._srcpool = await asyncpg.create_pool(**sourcea)
         self._destpool = await asyncpg.create_pool(**desta)
 
@@ -155,30 +153,9 @@ class Worker(object):
         logging.debug(query)
         return await conn.fetchval(query, (*data))
 
-    async def _work(self):
-        """Fetch a job and run it."""
-        jobid, payload, priority = await self._queue.acquire(
-            jobtype="process")
-        if jobid is None:
-            raise LookupError("no jobs available")
-        await self._execute_job(jobid, payload, priority)
-        await self._queue.finish(jobid)
-
-    async def run(self):
-        """Start jobs forever."""
-        while True:
-            try:
-                await self._work()
-            except LookupError:
-                await asyncio.sleep(1)
-
-    async def start(self, number=1):
-        """Start jobs in background."""
-        for _ in range(number):
-            asyncio.ensure_future(self.run())
 
 async def startup():
-    worker = Worker()
+    worker = Processor()
     await worker.connect(
         source_db, dest_db
     )
