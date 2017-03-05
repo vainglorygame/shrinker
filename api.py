@@ -53,61 +53,84 @@ class Processor(joblib.worker.Worker):
                 self._queries[table] = file.read()
                 logging.info("loaded query '%s'", table)
 
+    async def _windup(self):
+        self._srccon = await self._srcpool.acquire()
+        self._destcon = await self._destpool.acquire()
+        self._srctr = self._srccon.transaction()
+        self._desttr = self._destcon.transaction()
+        await self._srctr.start()
+        await self._desttr.start()
+        self._compilejobs = []
+
+    async def _teardown(self, failed):
+        if failed:
+            await self._srctr.rollback()
+            await self._desttr.rollback()
+        else:
+            await self._srctr.commit()
+            await self._desttr.commit()
+            self._compilejobs = list({
+                # uniquify
+                j["id"]: j for j in self._compilejobs
+            }.values())
+            await self._queue.request(
+                jobtype="compile",
+                payload=self._compilejobs)#,
+#                priority=priority) TODO
+        await self._srcpool.release(self._srccon)
+        await self._destpool.release(self._destcon)
+
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
         object_id = payload["id"]
         explicit_player = payload["playername"]
-        async with self._srcpool.acquire() as srccon:
-            async with self._destpool.acquire() as destcon:
-                async with srccon.transaction():
-                    async with destcon.transaction():
-                        # 1 object in raw : n objects in web
-                        for table, query in self._queries.items():
-                            logging.debug("%s: running '%s' query",
-                                          jobid, table)
-                            # fetch from raw, converted to format for web table
-                            # TODO refactor - duplicated messy code
-                            if table == "player":
-                                # upsert under special conditions
-                                datas = await srccon.fetch(
-                                    query, object_id, explicit_player)
-                                for data in datas:
-                                    obj_id = await self._playerinto(
-                                        destcon, data, table,
-                                        data["name"] == explicit_player)
+        # 1 object in raw : n objects in web
+        for table, query in self._queries.items():
+            logging.debug("%s: running '%s' query",
+                          jobid, table)
+            # fetch from raw, converted to format for web table
+            # TODO refactor - duplicated messy code
+            if table == "player":
+                # upsert under special conditions
+                datas = await self._srccon.fetch(
+                    query, object_id, explicit_player)
+                for data in datas:
+                    try:
+                        obj_id = await self._playerinto(
+                            self._destcon, data, table,
+                            data["name"] == explicit_player)
+                    except asyncpg.exceptions.DeadlockDetectedError:
+                        raise joblib.worker.JobFailed("deadlock")
 
-                                    if obj_id:
-                                        # run web->web queries
-                                        payload = {
-                                            "type": table,
-                                            "id": obj_id
-                                        }
-                                        await self._queue.request(
-                                            jobtype="compile",
-                                            payload=payload,
-                                            priority=priority)
-                            else:
-                                datas = await srccon.fetch(
-                                    query, object_id)
-                                for data in datas:
-                                    # insert processed result into web table
-                                    obj_id = await self._into(
-                                        destcon, data, table)
-                                    logging.debug("record processed")
+                    if obj_id:
+                        # run web->web queries
+                        payload = {
+                            "type": table,
+                            "id": obj_id
+                        }
+                        self._compilejobs.append(payload)
+            else:
+                datas = await self._srccon.fetch(
+                    query, object_id)
+                for data in datas:
+                    # insert processed result into web table
+                    try:
+                        obj_id = await self._into(
+                            self._destcon, data, table)
+                    except asyncpg.exceptions.DeadlockDetectedError:
+                        raise joblib.worker.JobFailed("deadlock")
+                    logging.debug("record processed")
 
-                                    if obj_id:
-                                        # run web->web queries
-                                        payload = {
-                                            "type": table,
-                                            "id": obj_id
-                                        }
-                                        await self._queue.request(
-                                            jobtype="compile",
-                                            payload=payload,
-                                            priority=priority)
+                    if obj_id:
+                        # run web->web queries
+                        payload = {
+                            "type": table,
+                            "id": obj_id
+                        }
+                        self._compilejobs.append(payload)
 
-                    data = await srccon.fetchrow(
-                        "DELETE FROM match WHERE id=$1", object_id)
+        await self._srccon.execute(
+            "DELETE FROM match WHERE id=$1", object_id)
 
     async def _playerinto(self, conn, data, table, do_upsert_date):
         """Upsert a player named tuple into a table.
@@ -155,12 +178,13 @@ class Processor(joblib.worker.Worker):
 
 
 async def startup():
-    worker = Processor()
-    await worker.connect(
-        source_db, dest_db
-    )
-    await worker.setup()
-    await worker.start(1)
+    for _ in range(2):
+        worker = Processor()
+        await worker.connect(
+            source_db, dest_db
+        )
+        await worker.setup()
+        await worker.start(batchlimit=50)
 
 logging.basicConfig(
     filename=os.path.realpath(
