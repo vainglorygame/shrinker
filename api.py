@@ -53,25 +53,40 @@ class Compiler(joblib.worker.Worker):
                     self._queries[table] = [file.read()]
                 logging.info("loaded query '%s'", table)
 
+
+    async def _windup(self):
+        self._con = await self._pool.acquire()
+        self._tr = self._con.transaction()
+        await self._tr.start()
+
+    async def _teardown(self, failed):
+        if failed:
+            await self._tr.rollback()
+        else:
+            await self._tr.commit()
+        await self._pool.release(self._con)
+    
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
         object_id = payload["id"]
         table = payload["type"]
         if table not in self._queries:
             return
-        async with self._pool.acquire() as con:
-            logging.debug("%s: compiling '%s' from '%s'",
-                          jobid, object_id, table)
-            for query in self._queries[table]:
-                async with con.transaction():
-                    await con.execute(query, object_id)
+        logging.debug("%s: compiling '%s' from '%s'",
+                      jobid, object_id, table)
+        tasks = []
+        for query in self._queries[table]:
+            tasks.append(asyncio.ensure_future(
+                self._con.execute(query, object_id)))
+        await asyncio.gather(*tasks)
 
 
 async def startup():
-    worker = Compiler()
-    await worker.connect(db_config, queue_db)
-    await worker.setup()
-    await worker.start(1)
+    for _ in range(1):
+        worker = Compiler()
+        await worker.connect(db_config, queue_db)
+        await worker.setup()
+        await worker.start(batchlimit=20)
 
 
 logging.basicConfig(

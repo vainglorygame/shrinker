@@ -25,3 +25,5 @@ select
 )
 INSERT INTO player_stats(player_api_id, patch_version, played, wins, casual_played, casual_wins, ranked_played, ranked_wins, streak)
     SELECT * FROM stats
+ON CONFLICT(player_api_id) DO
+    UPDATE SET (player_api_id, patch_version, played, wins, casual_played, casual_wins, ranked_played, ranked_wins, streak) = (SELECT * FROM stats)
