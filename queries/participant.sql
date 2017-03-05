@@ -1,7 +1,9 @@
 WITH rosters AS (SELECT
+  (match.data->'data'->'attributes'->>'createdAt')::timestamp AS matchdate,
   JSONB_ARRAY_ELEMENTS(match.data->'relations') AS roster
 FROM match WHERE id=$1),
 participants AS (SELECT
+  matchdate,
   rosters.roster->'data'->>'id' AS rosterid,
   JSONB_ARRAY_ELEMENTS(rosters.roster->'relations') AS participant
 FROM rosters)
@@ -10,6 +12,7 @@ SELECT
 participant->'data'->>'id' AS "api_id",
 rosterid AS "roster_api_id",
 participant->'relations'->0->'data'->>'id' AS "player_api_id",
+matchdate AS "created_at",
 
 participant->'data'->'attributes'->>'actor' AS "hero",
 (participant->'data'->'attributes'->'stats'->>'assists')::int AS "assists",
