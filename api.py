@@ -61,6 +61,7 @@ class Processor(joblib.worker.Worker):
         await self._srctr.start()
         await self._desttr.start()
         self._compilejobs = []
+        self._spiders = []
 
     async def _teardown(self, failed):
         if failed:
@@ -77,6 +78,17 @@ class Processor(joblib.worker.Worker):
                 jobtype="compile",
                 payload=self._compilejobs)#,
 #                priority=priority) TODO
+            spiderjobs = [{
+                "region": s[0],
+                "params": {
+                    "filter[playerNames]": s[1],
+                    "filter[createdAt-start]": "2017-03-01T00:00:00Z"
+                }
+            } for s in self._spiders]
+            await self._queue.request(
+                jobtype="grab",
+                payload=spiderjobs,
+                priority=1000)
         await self._srcpool.release(self._srccon)
         await self._destpool.release(self._destcon)
 
@@ -102,6 +114,7 @@ class Processor(joblib.worker.Worker):
                     except asyncpg.exceptions.DeadlockDetectedError:
                         raise joblib.worker.JobFailed("deadlock")
 
+                    logging.debug("record processed")
                     if obj_id:
                         # run web->web queries
                         payload = {
@@ -109,6 +122,9 @@ class Processor(joblib.worker.Worker):
                             "id": obj_id
                         }
                         self._compilejobs.append(payload)
+                        if explicit_player != data["name"]:
+                            self._spiders.append((data["shard_id"],
+                                                 data["name"]))
             else:
                 datas = await self._srccon.fetch(
                     query, object_id)
