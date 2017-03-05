@@ -28,11 +28,13 @@ dest_db = {
 
 
 class Processor(joblib.worker.Worker):
-    def __init__(self):
+    def __init__(self, do_spider=False, do_analyze=False):
         self._srcpool = None
         self._destpool = None
         self._queries = {}
         super().__init__(jobtype="process")
+        self._do_spider = do_spider
+        self._do_analyze = do_analyze
 
     async def connect(self, sourcea, desta):
         """Connect to database."""
@@ -61,6 +63,7 @@ class Processor(joblib.worker.Worker):
         await self._srctr.start()
         await self._desttr.start()
         self._compilejobs = []
+        self._analyzejobs = []
         self._spiders = []
 
     async def _teardown(self, failed):
@@ -74,10 +77,20 @@ class Processor(joblib.worker.Worker):
                 # uniquify
                 j["id"]: j for j in self._compilejobs
             }.values())
+
             await self._queue.request(
                 jobtype="compile",
                 payload=self._compilejobs)#,
 #                priority=priority) TODO
+            self._analyzejobs = list({
+                # uniquify
+                j["id"]: j for j in self._analyzejobs
+            }.values())
+            if self._do_analyze:
+                await self._queue.request(
+                    jobtype="analyze",
+                    payload=self._analyzejobs)
+
             spiderjobs = [{
                 "region": s[0],
                 "params": {
@@ -85,10 +98,12 @@ class Processor(joblib.worker.Worker):
                     "filter[createdAt-start]": "2017-03-01T00:00:00Z"
                 }
             } for s in self._spiders]
-            await self._queue.request(
-                jobtype="grab",
-                payload=spiderjobs,
-                priority=1000)
+            if self._do_spider:
+                await self._queue.request(
+                    jobtype="grab",
+                    payload=spiderjobs,
+                    priority=1001)
+
         await self._srcpool.release(self._srccon)
         await self._destpool.release(self._destcon)
 
@@ -122,6 +137,7 @@ class Processor(joblib.worker.Worker):
                             "id": obj_id
                         }
                         self._compilejobs.append(payload)
+                        self._analyzejobs.append(payload)
                         if explicit_player != data["name"]:
                             self._spiders.append((data["shard_id"],
                                                  data["name"]))
@@ -144,6 +160,7 @@ class Processor(joblib.worker.Worker):
                             "id": obj_id
                         }
                         self._compilejobs.append(payload)
+                        self._analyzejobs.append(payload)
 
         await self._srccon.execute(
             "DELETE FROM match WHERE id=$1", object_id)
@@ -195,7 +212,10 @@ class Processor(joblib.worker.Worker):
 
 async def startup():
     for _ in range(2):
-        worker = Processor()
+        worker = Processor(
+            do_spider=os.environ.get("VAINSOCIAL_SPIDER")=="true",
+            do_analyze=os.environ.get("VAINSOCIAL_ANALYZE")=="true"
+        )
         await worker.connect(
             source_db, dest_db
         )
