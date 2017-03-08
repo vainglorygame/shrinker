@@ -28,7 +28,7 @@ db_config = {
 
 class Compiler(joblib.worker.Worker):
     def __init__(self):
-        self._pool = None
+        self._con = None
         self._queries = {}
         super().__init__(jobtype="compile")
 
@@ -36,7 +36,7 @@ class Compiler(joblib.worker.Worker):
         """Connect to database."""
         logging.warning("connecting to database")
         await super().connect(**queuedb)
-        self._pool = await asyncpg.create_pool(**dbconf)
+        self._con = await asyncpg.connect(**dbconf)
 
     async def setup(self):
         """Initialize the database."""
@@ -55,7 +55,6 @@ class Compiler(joblib.worker.Worker):
 
 
     async def _windup(self):
-        self._con = await self._pool.acquire()
         self._tr = self._con.transaction()
         await self._tr.start()
 
@@ -64,7 +63,6 @@ class Compiler(joblib.worker.Worker):
             await self._tr.rollback()
         else:
             await self._tr.commit()
-        await self._pool.release(self._con)
     
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
