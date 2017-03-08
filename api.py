@@ -150,7 +150,10 @@ class Processor(joblib.worker.Worker):
         """Upsert a player named tuple into a table.
         Return the object id."""
         # save lmcd to restore later
-        lmcd = data["last_match_created_date"]
+        lmcd = await conn.fetchval("""
+            SELECT last_match_created_date FROM player
+            WHERE api_id=$1
+        """, data["api_id"])
 
         obj = await self._into(conn, data, table, conflict="""
             DO UPDATE SET ("{1}") = ({2})
