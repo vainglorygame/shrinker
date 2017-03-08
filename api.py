@@ -40,8 +40,8 @@ class Processor(joblib.worker.Worker):
         """Connect to database."""
         logging.warning("connecting to database")
         await super().connect(**sourcea)
-        self._srcpool = await asyncpg.create_pool(**sourcea)
-        self._destpool = await asyncpg.create_pool(**desta)
+        self._srccon = await asyncpg.connect(**sourcea)
+        self._destcon = await asyncpg.connect(**desta)
 
     async def setup(self):
         """Initialize the database."""
@@ -56,8 +56,6 @@ class Processor(joblib.worker.Worker):
                 logging.info("loaded query '%s'", table)
 
     async def _windup(self):
-        self._srccon = await self._srcpool.acquire()
-        self._destcon = await self._destpool.acquire()
         self._srctr = self._srccon.transaction()
         self._desttr = self._destcon.transaction()
         await self._srctr.start()
@@ -103,9 +101,6 @@ class Processor(joblib.worker.Worker):
                     jobtype="grab",
                     payload=spiderjobs,
                     priority=1001)
-
-        await self._srcpool.release(self._srccon)
-        await self._destpool.release(self._destcon)
 
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
