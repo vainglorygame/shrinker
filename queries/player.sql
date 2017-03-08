@@ -26,7 +26,7 @@ players.player->'data'->'attributes'->>'name' AS "name",
 (players.player->'data'->'attributes'->'stats'->>'played')::int - (players.player->'data'->'attributes'->'stats'->>'played_ranked')::int AS "played_casual",
 (players.player->'data'->'attributes'->'stats'->>'wins')::int AS "wins",
 (players.player->'data'->'attributes'->'stats'->>'lifetimeGold')::float AS "lifetime_gold",
-CASE WHEN players.player->'data'->'attributes'->>'name'=$2 THEN matchdate ELSE 'epoch'::timestamp END AS "last_match_created_date",
+matchdate AS "last_match_created_date",
 
 0 AS "streak"
 
