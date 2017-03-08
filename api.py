@@ -100,9 +100,9 @@ class Processor(joblib.worker.Worker):
                     }
                 } for s in self._spiders]
                 await self._queue.request(
-                    jobtype="grab",
+                    jobtype="spider",
                     payload=spiderjobs,
-                    priority=1001)
+                    priority=0)
 
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
