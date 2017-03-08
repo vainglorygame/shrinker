@@ -96,7 +96,8 @@ class Processor(joblib.worker.Worker):
                     "region": s[0],
                     "params": {
                         "filter[playerNames]": s[1],
-                        "filter[createdAt-start]": date2iso(s[2])
+                        "filter[createdAt-start]": date2iso(s[2]),
+                        "filter[gameMode]": "casual,ranked"
                     }
                 } for s in self._spiders]
                 await self._queue.request(
