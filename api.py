@@ -70,8 +70,10 @@ class Processor(joblib.worker.Worker):
         self._desttr = self._destcon.transaction()
         await self._srctr.start()
         await self._desttr.start()
+        self._priorities = []
         self._compilejobs = []
         self._analyzejobs = []
+        self._spiderpriorities = []
         self._spiders = []
 
     async def _teardown(self, failed):
@@ -84,8 +86,8 @@ class Processor(joblib.worker.Worker):
 
             await self._queue.request(
                 jobtype="compile",
-                payload=self._compilejobs)#,
-#                priority=priority) TODO
+                payload=self._compilejobs,
+                priority=self._priorities)
             if self._do_analyze:
                 await self._queue.request(
                     jobtype="analyze",
@@ -103,7 +105,7 @@ class Processor(joblib.worker.Worker):
                 await self._queue.request(
                     jobtype="spider",
                     payload=spiderjobs,
-                    priority=0)
+                    priority=self._spiderpriorities)
 
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
@@ -126,7 +128,7 @@ class Processor(joblib.worker.Worker):
                         obj = await self._into(
                             self._destcon, data, table)
                         obj_id = None
-                        if obj:
+                        if obj is not None:
                             obj_id = obj["api_id"]
                 except asyncpg.exceptions.DeadlockDetectedError:
                     raise joblib.worker.JobFailed("deadlock")
@@ -138,12 +140,15 @@ class Processor(joblib.worker.Worker):
                         "type": table,
                         "id": obj_id
                     }
+                    logging.debug("requested jobs for %s", obj_id)
+                    self._priorities.append(priority)
                     self._compilejobs.append(payload)
                     self._analyzejobs.append(payload)
 
-                if lmcd is not None:
-                    self._spiders.append((data["shard_id"],
-                                          data["name"], lmcd))
+                    if lmcd is not None:
+                        self._spiderpriorities.append(priority+1)
+                        self._spiders.append((data["shard_id"],
+                                              data["name"], lmcd))
 
         await self._deletematch.fetchrow(object_id)
 
@@ -158,8 +163,10 @@ class Processor(joblib.worker.Worker):
 
         obj = await self._into(conn, data, table, conflict="""
             DO UPDATE SET ("{1}") = ({2})
-            WHERE player.last_match_created_date
-            < EXCLUDED.last_match_created_date
+            WHERE COALESCE(player.last_match_created_date,
+                           'epoch'::TIMESTAMP)
+            <= COALESCE(EXCLUDED.last_match_created_date,
+                       'epoch'::TIMESTAMP)
             RETURNING api_id, last_match_created_date
         """)
         if obj is None:
@@ -193,7 +200,7 @@ class Processor(joblib.worker.Worker):
                     ", ".join(placeholders))
         logging.debug("query: %s", query)
         logging.debug("data: %s", data)
-        return await conn.fetchrow(query, *data)
+        return await conn.fetchrow(query, (*data))
 
 
 async def startup():
