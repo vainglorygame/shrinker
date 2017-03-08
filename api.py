@@ -36,8 +36,6 @@ def date2iso(d):
 
 class Processor(joblib.worker.Worker):
     def __init__(self, do_spider=False, do_analyze=False):
-        self._srcpool = None
-        self._destpool = None
         self._queries = {}
         super().__init__(jobtype="process")
         self._do_spider = do_spider  # request spider jobs
