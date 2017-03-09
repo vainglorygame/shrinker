@@ -35,10 +35,10 @@ def date2iso(d):
 
 
 class Processor(joblib.worker.Worker):
-    def __init__(self, do_spider=False, do_analyze=False):
+    def __init__(self, do_preload=False, do_analyze=False):
         self._queries = {}
         super().__init__(jobtype="process")
-        self._do_spider = do_spider  # request spider jobs
+        self._do_preload = do_preload  # request preload jobs
         self._do_analyze = do_analyze  # request machine learning
 
     async def connect(self, sourcea, desta):
@@ -71,8 +71,8 @@ class Processor(joblib.worker.Worker):
         self._priorities = []
         self._compilejobs = []
         self._analyzejobs = []
-        self._spiderpriorities = []
-        self._spiders = []
+        self._preloadpriorities = []
+        self._preloads = []
 
     async def _teardown(self, failed):
         if failed:
@@ -91,19 +91,19 @@ class Processor(joblib.worker.Worker):
                     jobtype="analyze",
                     payload=self._analyzejobs)
 
-            if self._do_spider:
-                spiderjobs = [{
+            if self._do_preload:
+                preloadjobs = [{
                     "region": s[0],
                     "params": {
                         "filter[playerNames]": s[1],
                         "filter[createdAt-start]": date2iso(s[2]),
                         "filter[gameMode]": "casual,ranked"
                     }
-                } for s in self._spiders]
+                } for s in self._preloads]
                 await self._queue.request(
-                    jobtype="spider",
-                    payload=spiderjobs,
-                    priority=self._spiderpriorities)
+                    jobtype="preload",
+                    payload=preloadjobs,
+                    priority=self._preloadpriorities)
 
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
@@ -146,8 +146,8 @@ class Processor(joblib.worker.Worker):
                     self._analyzejobs.append(payload)
 
                     if lmcd is not None:
-                        self._spiderpriorities.append(priority+1)
-                        self._spiders.append((data["shard_id"],
+                        self._preloadpriorities.append(priority+1)
+                        self._preloads.append((data["shard_id"],
                                               data["name"], lmcd))
 
         await self._deletematch.fetchrow(object_id)
@@ -177,7 +177,7 @@ class Processor(joblib.worker.Worker):
         objlmcd = obj["last_match_created_date"]
 
         # restore lmcd because
-        # we want to request a spider job
+        # we want to request a preload job
         if not update_date:
             await conn.fetchval("""
                 UPDATE player SET last_match_created_date=$2
@@ -206,7 +206,7 @@ class Processor(joblib.worker.Worker):
 async def startup():
     for _ in range(2):
         worker = Processor(
-            do_spider=os.environ.get("VAINSOCIAL_SPIDER")=="true",
+            do_preload=os.environ.get("VAINSOCIAL_SPIDER")=="true",
             do_analyze=os.environ.get("VAINSOCIAL_ANALYZE")=="true"
         )
         await worker.connect(
