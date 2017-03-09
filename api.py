@@ -129,6 +129,7 @@ class Processor(joblib.worker.Worker):
                         if obj is not None:
                             obj_id = obj["api_id"]
                 except asyncpg.exceptions.DeadlockDetectedError:
+                    logging.error("%s: deadlocked!", jobid)
                     raise joblib.worker.JobFailed("deadlock",
                                                   True)  # critical
 
