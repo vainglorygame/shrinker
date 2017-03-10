@@ -204,7 +204,7 @@ class Processor(joblib.worker.Worker):
 
 
 async def startup():
-    for _ in range(2):
+    for _ in range(1):
         worker = Processor(
             do_preload=os.environ.get("VAINSOCIAL_SPIDER")=="true",
             do_analyze=os.environ.get("VAINSOCIAL_ANALYZE")=="true"
