@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import datetime
 import glob
 import logging
 import asyncpg
@@ -71,7 +72,6 @@ class Processor(joblib.worker.Worker):
         self._priorities = []
         self._compilejobs = []
         self._analyzejobs = []
-        self._preloadpriorities = []
         self._preloads = []
 
     async def _teardown(self, failed):
@@ -96,14 +96,14 @@ class Processor(joblib.worker.Worker):
                     "region": s[0],
                     "params": {
                         "filter[playerNames]": s[1],
-                        "filter[createdAt-start]": date2iso(s[2]),
+                        "filter[createdAt-start]": date2iso(s[2] + datetime.timedelta(seconds=1)),
                         "filter[gameMode]": "casual,ranked"
                     }
                 } for s in self._preloads]
                 await self._queue.request(
                     jobtype="preload",
                     payload=preloadjobs,
-                    priority=self._preloadpriorities)
+                    priority=[2]*len(preloadjobs))
 
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
@@ -149,9 +149,19 @@ class Processor(joblib.worker.Worker):
                         self._analyzejobs.append(payload)
 
                     if lmcd is not None:
-                        self._preloadpriorities.append(priority+1)
-                        self._preloads.append((data["shard_id"],
-                                              data["name"], lmcd))
+                        now = datetime.datetime.now()
+                        interval_mins = (now - lmcd).total_seconds()/60
+                        logging.debug("%s: minutes since last match: %s",
+                                      jobid, interval_mins)
+                        if priority == 1 and interval_mins > 30:
+                            # TODO move to config var        ^
+                            # TODO
+                            # only allowed 1 level by ToS
+                            if data["name"] not in [p[1] for p in self._preloads]:
+                                # prevent duplicates
+                                # TODO also prevent across batches!
+                                self._preloads.append((data["shard_id"],
+                                                       data["name"], lmcd))
 
         await self._deletematch.fetchrow(object_id)
 
