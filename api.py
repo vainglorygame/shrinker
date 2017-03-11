@@ -134,16 +134,19 @@ class Processor(joblib.worker.Worker):
                                                   True)  # critical
 
                 logging.debug("record processed")
-                if obj_id:
+                if obj_id is not None:
                     # run web->web queries
                     payload = {
                         "type": table,
                         "id": obj_id
                     }
-                    logging.debug("requested jobs for %s", obj_id)
+                    logging.debug("%s: requesting jobs for %s",
+                                  jobid, obj_id)
                     self._priorities.append(priority)
-                    self._compilejobs.append(payload)
-                    self._analyzejobs.append(payload)
+                    if table == "player":
+                        self._compilejobs.append(payload)
+                    if table == "participant":
+                        self._analyzejobs.append(payload)
 
                     if lmcd is not None:
                         self._preloadpriorities.append(priority+1)
