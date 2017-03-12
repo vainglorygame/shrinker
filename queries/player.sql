@@ -9,6 +9,7 @@ participants AS (SELECT
   JSONB_ARRAY_ELEMENTS(rosters.roster->'relations') AS participant
 FROM rosters),
 players AS (SELECT
+  participants.participant->'data'->'attributes'->'stats'->>'skillTier' AS skill_tier,
   shardid,
   matchdate,
   JSONB_ARRAY_ELEMENTS(participants.participant->'relations') AS player
@@ -27,7 +28,7 @@ players.player->'data'->'attributes'->>'name' AS "name",
 (players.player->'data'->'attributes'->'stats'->>'wins')::int AS "wins",
 (players.player->'data'->'attributes'->'stats'->>'lifetimeGold')::float AS "lifetime_gold",
 matchdate AS "last_match_created_date",
-
+skill_tier AS "skill_tier",
 0 AS "streak"
 
 FROM players
