@@ -132,6 +132,10 @@ class Processor(joblib.worker.Worker):
                     logging.error("%s: deadlocked!", jobid)
                     raise joblib.worker.JobFailed("deadlock",
                                                   True)  # critical
+                except asyncpg.exceptions.IntegrityConstraintViolationError as err:
+                    logging.error("%s: SQL error '%s'!", jobid, err)
+                    raise joblib.worker.JobFailed({"id": object_id,
+                                                   "error": str(err)}, True)
 
                 logging.debug("record processed")
                 if obj_id is not None:
