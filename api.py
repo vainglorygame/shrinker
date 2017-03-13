@@ -82,12 +82,12 @@ class Processor(joblib.worker.Worker):
             await self._srctr.commit()
             await self._desttr.commit()
 
-            await self._queue.request(
+            await self.request(
                 jobtype="compile",
                 payload=self._compilejobs,
                 priority=self._priorities)
             if self._do_analyze:
-                await self._queue.request(
+                await self.request(
                     jobtype="analyze",
                     payload=self._analyzejobs)
 
@@ -100,7 +100,7 @@ class Processor(joblib.worker.Worker):
                         "filter[gameMode]": "casual,ranked"
                     }
                 } for s in self._preloads]
-                await self._queue.request(
+                await self.request(
                     jobtype="preload",
                     payload=preloadjobs,
                     priority=[2]*len(preloadjobs))
