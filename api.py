@@ -147,7 +147,7 @@ class Processor(joblib.worker.Worker):
                     logging.debug("%s: requesting jobs for %s",
                                   jobid, obj_id)
                     self._priorities.append(priority)
-                    if table == "player":
+                    if table == "player" or table == "participant":
                         self._compilejobs.append(payload)
                     if table == "participant":
                         self._analyzejobs.append(payload)
