@@ -108,7 +108,7 @@ class Processor(joblib.worker.Worker):
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
         object_id = payload["id"]
-        explicit_player = payload["playername"]
+        explicit_player = payload.get("playername") or ""
         # 1 object in raw : n objects in web
         for table, query in self._queries.items():
             logging.debug("%s: running '%s' query",
