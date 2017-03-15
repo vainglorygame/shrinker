@@ -29,7 +29,7 @@ COALESCE(NULLIF(participant->'data'->'attributes'->'stats'->>'level', ''), '0'):
 COALESCE(NULLIF(participant->'data'->'attributes'->'stats'->>'minionKills', ''), '0')::int AS "minion_kills",
 COALESCE(NULLIF(participant->'data'->'attributes'->'stats'->>'skillTier', ''), '0')::int AS "skill_tier",
 COALESCE(NULLIF(participant->'data'->'attributes'->'stats'->>'skinKey', ''), '0') AS "skin_key",
-COALESCE(NULLIF(participant->'data'->'attributes'->'stats'->>'turretKills', ''), '0')::int AS "turret_kills",
+COALESCE(NULLIF(participant->'data'->'attributes'->'stats'->>'turretCaptures', ''), '0')::int AS "turret_kills",
 (participant->'data'->'attributes'->'stats'->>'wentAfk')::bool AS "went_afk",
 (participant->'data'->'attributes'->'stats'->>'winner')::bool AS "winner",
 participant->'data'->'attributes'->'stats'->'itemGrants' AS "item_grants",
