@@ -232,17 +232,7 @@ async def startup():
         await worker.setup()
         await worker.start(batchlimit=50)
 
-logging.basicConfig(
-    filename=os.path.realpath(
-        os.path.join(os.getcwd(),
-                     os.path.dirname(__file__))) +
-        "/logs/processor.log",
-    filemode="a",
-    level=logging.DEBUG
-)
-console = logging.StreamHandler()
-console.setLevel(logging.WARNING)
-logging.getLogger("").addHandler(console)
+logging.basicConfig(level=logging.DEBUG)
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(startup())
