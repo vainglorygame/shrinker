@@ -204,7 +204,8 @@ class Processor(joblib.worker.Worker):
         return objid, objlmcd
 
     async def _into(self, conn, data, table,
-                    conflict="DO NOTHING RETURNING api_id"):
+                    conflict="DO UPDATE SET (\"{1}\") = ({2}) " +
+                             "RETURNING api_id"):
         """Insert a named tuple into a table.
         Return the object id."""
         items = list(data.items())
