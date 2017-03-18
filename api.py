@@ -41,6 +41,8 @@ class Processor(joblib.worker.Worker):
         super().__init__(jobtype="process")
         self._do_preload = do_preload  # request preload jobs
         self._do_analyze = do_analyze  # request machine learning
+        logging.debug("preload: %s, analyze: %s",
+                      do_preload, do_analyze)
 
     async def connect(self, sourcea, desta):
         """Connect to database."""
