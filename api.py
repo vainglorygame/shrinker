@@ -224,19 +224,17 @@ class Processor(joblib.worker.Worker):
 
 
 async def startup():
-    for _ in range(1):
-        worker = Processor(
-            do_preload=os.environ.get("VAINSOCIAL_SPIDER")=="true",
-            do_analyze=os.environ.get("VAINSOCIAL_ANALYZE")=="true"
-        )
-        await worker.connect(
-            source_db, dest_db
-        )
-        await worker.setup()
-        await worker.start(batchlimit=50)
+    worker = Processor(
+        do_preload=os.environ.get("VAINSOCIAL_SPIDER")=="true",
+        do_analyze=os.environ.get("VAINSOCIAL_ANALYZE")=="true"
+    )
+    await worker.connect(
+        source_db, dest_db
+    )
+    await worker.setup()
+    await worker.run(batchlimit=1000)
 
 logging.basicConfig(level=logging.DEBUG)
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(startup())
-loop.run_forever()
