@@ -83,7 +83,7 @@ async def startup():
     worker = Compiler()
     await worker.connect(db_config, queue_db)
     await worker.setup()
-    await worker.run(batchlimit=1000)
+    await worker.run(batchlimit=5000)
 
 
 logging.basicConfig(level=logging.DEBUG)
