@@ -7,10 +7,8 @@ var amqp = require("amqplib"),
     Bluebird = require("bluebird"),
     jsonapi = Bluebird.promisifyAll(require("superagent-jsonapify/common"));
 
-var MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
-    RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
+var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     DATABASE_URI = process.env.DATABASE_URI || "sqlite:///db.sqlite";
-if (MADGLORY_TOKEN == undefined) throw "Need an API token";
 
 (async () => {
     let seq = new Seq(DATABASE_URI),
