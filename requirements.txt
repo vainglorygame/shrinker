@@ -1,6 +1,0 @@
-appdirs==1.4.3
-packaging==16.8
-pika==0.10.0
-psycopg2==2.7.1
-pyparsing==2.2.0
-six==1.10.0
