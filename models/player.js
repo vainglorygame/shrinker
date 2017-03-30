@@ -23,7 +23,7 @@ module.exports = function(sequelize, DataTypes) {
     },
     shard_id: {
       type: DataTypes.STRING(191),
-      allowNull: true
+      allowNull: false
     },
     last_match_created_date: {
       type: DataTypes.TIME,

@@ -17,6 +17,10 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       unique: true
     },
+    shard_id: {
+      type: DataTypes.STRING(191),
+      allowNull: false
+    },
     aces_earned: {
       type: DataTypes.INTEGER(11),
       allowNull: false

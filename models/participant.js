@@ -13,6 +13,10 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       unique: true
     },
+    shard_id: {
+      type: DataTypes.STRING(191),
+      allowNull: false
+    },
     player_api_id: {
       type: DataTypes.STRING(191),
       allowNull: false

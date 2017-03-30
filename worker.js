@@ -60,12 +60,17 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
         await match.rosters.forEach(async (roster) => {
             roster.match_api_id = match.api_id;
+            roster.shard_id = match.shard_id;
             await model.Roster.upsert(roster, {
                 include: [ model.Participant/*, model.Team*/ ]
             });
 
             await roster.participants.forEach(async (participant) => {
+                participant.shard_id = roster.shard_id;
+                participant.player.shard_id = participant.shard_id;
+                
                 await model.Player.upsert(participant.player);
+
 
                 participant.roster_api_id = roster.api_id;
                 participant.player_api_id = participant.player.api_id;
