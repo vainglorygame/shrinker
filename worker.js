@@ -54,7 +54,16 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         console.log(match);
 
         /* upsert everything */
+        await model.Match.upsert(match, {
+            include: [ model.Roster/*, model.Asset*/ ]
+        });
+
         await match.rosters.forEach(async (roster) => {
+            roster.match_api_id = match.api_id;
+            await model.Roster.upsert(roster, {
+                include: [ model.Participant/*, model.Team*/ ]
+            });
+
             await roster.participants.forEach(async (participant) => {
                 await model.Player.upsert(participant.player);
 
@@ -66,22 +75,19 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             });
 
             //if (roster.team != null) model.Team.upsert(roster.team);
-
-            roster.match_api_id = match.api_id;
-            await model.Roster.upsert(roster, {
-                include: [ model.Participant/*, model.Team*/ ]
-            });
         });
 
         /*match.assets.forEach((asset) => {
             model.Asset.upsert(asset);
         });*/
 
-        await model.Match.upsert(match, {
-            include: [ model.Roster/*, model.Asset*/ ]
-        });
-
         await transaction.commit();  // TODO rollback on err
         ch.ack(msg);
+
+        await match.rosters.forEach(async (r) => {
+            await r.participants.forEach(async (p) => {
+                await ch.publish("amq.topic", p.player.name, new Buffer("process_commit"));
+            });
+        });
     }, { noAck: false });
 })();
