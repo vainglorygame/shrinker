@@ -26,9 +26,9 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(191),
       allowNull: false
     },
-    patch_version: {
+    series: {
       type: DataTypes.STRING(191),
-      allowNull: false
+      allowNull: true
     },
     shard_id: {
       type: DataTypes.STRING(191),
@@ -43,6 +43,7 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false
     }
   }, {
-    tableName: 'match'
+    tableName: 'match',
+    timestamps: false
   });
 };
