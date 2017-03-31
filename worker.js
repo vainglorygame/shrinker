@@ -75,12 +75,12 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             let matches = msgs.filter((m) => m.properties.type == "match").map((m) => JSON.parse(m.content)),
                 players = msgs.filter((m) => m.properties.type == "player").map((m) => {
                     let pl = JSON.parse(m.content);
-                    pl.shard_id = m.properties.headers.shard;  // TODO workaround for empty API field
+                    pl.attributes.shard_id = m.properties.headers.shard;  // TODO workaround for empty API field
                     return pl;
                 }),
                 teams = msgs.filter((m) => m.properties.type == "team").map((m) => {
                     let t = JSON.parse(m.content);
-                    t.shard_id = m.properties.headers.shard;
+                    t.attributes.shard_id = m.properties.headers.shard;
                     return t;
                 });
 
