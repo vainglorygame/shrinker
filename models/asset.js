@@ -10,9 +10,34 @@ module.exports = function(sequelize, DataTypes) {
     },
     api_id: {
       type: DataTypes.STRING(191),
+      allowNull: false,
+      unique: true
+    },
+    match_api_id: {
+      type: DataTypes.STRING(191),
       allowNull: false
     },
-    type: {
+    url: {
+      type: DataTypes.STRING(191),
+      allowNull: false
+    },
+    content_type: {
+      type: DataTypes.STRING(191),
+      allowNull: false
+    },
+    created_at: {
+      type: DataTypes.TIME,
+      allowNull: false
+    },
+    description: {
+      type: DataTypes.STRING(191),
+      allowNull: false
+    },
+    filename: {
+      type: DataTypes.STRING(191),
+      allowNull: false
+    },
+    name: {
       type: DataTypes.STRING(191),
       allowNull: false
     }

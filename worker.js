@@ -7,7 +7,7 @@ var amqp = require("amqplib"),
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     DATABASE_URI = process.env.DATABASE_URI || "sqlite:///db.sqlite",
-    BATCHSIZE = process.env.PROCESSOR_BATCH || 50 * (1 + 2 + 3*2 + 3*2),
+    BATCHSIZE = process.env.PROCESSOR_BATCH || 50,  // matches
     IDLE_TIMEOUT = process.env.PROCESSOR_IDLETIMEOUT || 500;  // ms
 
 (async () => {
@@ -37,11 +37,11 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         if (timer === undefined)
             timer = setTimeout(process, IDLE_TIMEOUT)
         if (queue.length == BATCHSIZE)
-            process();
+            await process();
     }, { noAck: false });
 
     async function process() {
-        console.log("processing batch");
+        console.log("processing batch", queue.length);
 
         // clean up to allow processor to accept while we wait for db
         let matchmsgs = queue.slice();
@@ -71,7 +71,9 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         // UPSERT
         try {
             let matches = matchmsgs.map((msg) => JSON.parse(msg.content));
-            await matches.forEach(async (match) => {
+            await Promise.all(matches.map(async (match) => {
+                console.log("processing match", match.id);
+
                 // flatten jsonapi nested response into our db structure-like shape
                 match.rosters = match.rosters.map((roster) => {
                     roster.participants = roster.participants.map((participant) => {
@@ -80,6 +82,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     });
                     return flatten(roster);
                 });
+                match.assets = match.assets.map((asset) => flatten(asset));
                 match = flatten(match);
 
                 // upsert match
@@ -89,15 +92,15 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
                 // upsert children
                 // before, add foreign keys and other missing information (shardId)
-                await match.rosters.forEach(async (roster) => {
+                await Promise.all(match.rosters.map(async (roster) => {
                     roster.match_api_id = match.api_id;
                     roster.shard_id = match.shard_id;
 
                     await model.Roster.upsert(roster, {
-                        include: [ model.Participant, model.Team ]
+                        include: [ model.Participant/*, model.Team */]
                     });
 
-                    await roster.participants.forEach(async (participant) => {
+                    await Promise.all(roster.participants.map(async (participant) => {
                         participant.player.shard_id = participant.shard_id;
                         await model.Player.upsert(participant.player);
 
@@ -107,32 +110,38 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                         await model.Participant.upsert(participant, {
                             include: [ model.Player ]
                         });
-                    });
+                    }));
 
                     if (roster.team != null) {
                         roster.team.shard_id = roster.shard_id;
                         roster.team.roster_api_id = roster.api_id;
-                        await model.Team.upsert(roster.team);
+                        /*await model.Team.upsert(roster.team);*/
                     }
-                });
+                }));
 
-                await match.assets.forEach(async (asset) => {
+                await Promise.all(match.assets.map(async (asset) => {
+                    asset.match_api_id = match.api_id;
+                    asset.shard_id = match.shard_id;
+                    asset.url = asset.uRL;  // camelcasization failed ;)
                     await model.Asset.upsert(asset);
-                });
-            });
+                }));
+            }));
 
             // COMMIT
             await transaction.commit();
-            await ch.ack(matchmsgs.pop(), true);  // ack all messages until the last
+            console.log("acking batch");
+            await Promise.all(matchmsgs.map(async (msg) => {
+                await ch.ack(msg);
+            }));
             // request child jobs, notify player
-            await matches.forEach(async (m) => {
-                await m.rosters.forEach(async (r) => {
-                    await r.participants.forEach(async (p) => {
+            await Promise.all(matches.map(async (m) => {
+                await Promise.all(m.rosters.map(async (r) => {
+                    await Promise.all(r.participants.map(async (p) => {
                         await ch.publish("amq.topic", p.player.name, new Buffer("process_commit"));
-                    });
-                });
-            });
-        } catch (err) {  // TODO catch only SQL error, also catch errors in the forEach
+                    }));
+                }));
+            }));
+        } catch (err) {  // TODO catch only SQL error, also catch errors in the promises
             console.error(err);
             await ch.nack(matchmsgs.pop(), true, true);  // nack all messages until the last and requeue
             // TODO don't requeue broken records
