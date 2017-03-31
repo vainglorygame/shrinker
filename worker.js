@@ -146,7 +146,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             // COMMIT
             await transaction.commit();
             console.log("acking batch");
-            await Promise.all(msgs.map(async (msg) => await ch.ack(msg) ));
+            await ch.ack(msgs.pop(), true);  // ack all messages until the last
             // request child jobs, notify player
             await Promise.all(matches.map(async (m) =>
                 await Promise.all(m.rosters.map(async (r) =>
