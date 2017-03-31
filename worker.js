@@ -44,7 +44,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         console.log("processing batch", queue.length);
 
         // clean up to allow processor to accept while we wait for db
-        let matchmsgs = queue.slice();
+        let msgs = queue.slice();
         queue = [];
         clearTimeout(timer);
         timer = undefined;
@@ -70,7 +70,20 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
         // UPSERT
         try {
-            let matches = matchmsgs.map((msg) => JSON.parse(msg.content));
+            // apigrabber sends to queue with a custom "type" so processor can filter
+            // and insert players and matches seperately
+            let matches = msgs.filter((m) => m.properties.type == "match").map((m) => JSON.parse(m.content)),
+                players = msgs.filter((m) => m.properties.type == "player").map((m) => {
+                    let pl = JSON.parse(m.content);
+                    pl.shard_id = m.properties.headers.shard;  // TODO workaround for empty API field
+                    return pl;
+                }),
+                teams = msgs.filter((m) => m.properties.type == "team").map((m) => {
+                    let t = JSON.parse(m.content);
+                    t.shard_id = m.properties.headers.shard;
+                    return t;
+                });
+
             await Promise.all(matches.map(async (match) => {
                 console.log("processing match", match.id);
 
@@ -101,9 +114,6 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     });
 
                     await Promise.all(roster.participants.map(async (participant) => {
-                        participant.player.shard_id = participant.shard_id;
-                        await model.Player.upsert(participant.player);
-
                         participant.shard_id = roster.shard_id;
                         participant.roster_api_id = roster.api_id;
                         participant.player_api_id = participant.player.api_id;
@@ -122,28 +132,32 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                 await Promise.all(match.assets.map(async (asset) => {
                     asset.match_api_id = match.api_id;
                     asset.shard_id = match.shard_id;
-                    asset.url = asset.uRL;  // camelcasization failed ;)
                     await model.Asset.upsert(asset);
                 }));
             }));
 
+            // teams and players are upserted seperately
+            // because they are duplicated among a page of matches
+            // as provided by apigrabber
+            console.log("processing", players.length, "players", teams.length, "teams");
+            await Promise.all(players.map(async (p) => await model.Player.upsert(flatten(p)) ));
+            //await Promise.all(teams.map(async (t) => await model.Team.upsert(flatten(t)) ));
+
             // COMMIT
             await transaction.commit();
             console.log("acking batch");
-            await Promise.all(matchmsgs.map(async (msg) => {
-                await ch.ack(msg);
-            }));
+            await Promise.all(msgs.map(async (msg) => await ch.ack(msg) ));
             // request child jobs, notify player
-            await Promise.all(matches.map(async (m) => {
-                await Promise.all(m.rosters.map(async (r) => {
-                    await Promise.all(r.participants.map(async (p) => {
-                        await ch.publish("amq.topic", p.player.name, new Buffer("process_commit"));
-                    }));
-                }));
-            }));
+            await Promise.all(matches.map(async (m) =>
+                await Promise.all(m.rosters.map(async (r) =>
+                    await Promise.all(r.participants.map(async (p) =>
+                        await ch.publish("amq.topic", p.player.name, new Buffer("process_commit"))
+                    ))
+                ))
+            ));
         } catch (err) {  // TODO catch only SQL error, also catch errors in the promises
             console.error(err);
-            await ch.nack(matchmsgs.pop(), true, true);  // nack all messages until the last and requeue
+            await ch.nack(msgs.pop(), true, true);  // nack all messages until the last and requeue
             // TODO don't requeue broken records
         }
     }
