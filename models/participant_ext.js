@@ -8,7 +8,7 @@ module.exports = function(sequelize, DataTypes) {
       primaryKey: true,
       autoIncrement: true
     },
-    patch_version: {
+    series: {
       type: DataTypes.STRING(191),
       allowNull: false
     },
@@ -34,6 +34,9 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true
     }
   }, {
-    tableName: 'participant_ext'
+    tableName: 'participant_ext',
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

@@ -1,14 +1,14 @@
 /* jshint indent: 2 */
 
 module.exports = function(sequelize, DataTypes) {
-  return sequelize.define('stats_dimensions', {
+  return sequelize.define('gamer', {
     id: {
       type: DataTypes.INTEGER(10).UNSIGNED,
       allowNull: false,
       primaryKey: true,
       autoIncrement: true
     },
-    dimension_on: {
+    player_api_id: {
       type: DataTypes.STRING(191),
       allowNull: false
     },
@@ -16,12 +16,24 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(191),
       allowNull: false
     },
-    value: {
+    vainsocial_status: {
       type: DataTypes.STRING(191),
-      allowNull: false
+      allowNull: true
+    },
+    vainglory_ign: {
+      type: DataTypes.STRING(191),
+      allowNull: true
+    },
+    vainglory_shard_id: {
+      type: DataTypes.STRING(191),
+      allowNull: true
+    },
+    vainglory_is_pro: {
+      type: DataTypes.INTEGER(1),
+      allowNull: true
     }
   }, {
-    tableName: 'stats_dimensions',
+    tableName: 'gamer',
     timestamps: false,
     underscored: true,
     freezeTableName: true

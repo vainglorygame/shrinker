@@ -16,7 +16,7 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.TIME,
       allowNull: true
     },
-    patch_version: {
+    series: {
       type: DataTypes.STRING(191),
       allowNull: false
     },
@@ -61,6 +61,9 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false
     }
   }, {
-    tableName: 'hero_core_stats'
+    tableName: 'hero_core_stats',
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

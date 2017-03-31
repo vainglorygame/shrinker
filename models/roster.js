@@ -8,7 +8,7 @@ module.exports = function(sequelize, DataTypes) {
       primaryKey: true,
       autoIncrement: true
     },
-    match_api_id: {
+    shard_id: {
       type: DataTypes.STRING(191),
       allowNull: false
     },
@@ -17,7 +17,7 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       unique: true
     },
-    shard_id: {
+    match_api_id: {
       type: DataTypes.STRING(191),
       allowNull: false
     },
@@ -42,7 +42,8 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false
     },
     team_color: {
-      type: DataTypes.STRING(191)
+      type: DataTypes.STRING(191),
+      allowNull: false
     },
     turret_kills: {
       type: DataTypes.INTEGER(11),
@@ -54,6 +55,8 @@ module.exports = function(sequelize, DataTypes) {
     }
   }, {
     tableName: 'roster',
-    timestamps: false
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

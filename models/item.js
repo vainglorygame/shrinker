@@ -16,7 +16,7 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.TIME,
       allowNull: true
     },
-    patch_version: {
+    series: {
       type: DataTypes.STRING(191),
       allowNull: false
     },
@@ -33,6 +33,9 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false
     }
   }, {
-    tableName: 'item'
+    tableName: 'item',
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

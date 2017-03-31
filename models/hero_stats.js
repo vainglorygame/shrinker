@@ -33,6 +33,9 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false
     }
   }, {
-    tableName: 'hero_stats'
+    tableName: 'hero_stats',
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

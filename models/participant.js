@@ -8,14 +8,14 @@ module.exports = function(sequelize, DataTypes) {
       primaryKey: true,
       autoIncrement: true
     },
+    shard_id: {
+      type: DataTypes.STRING(191),
+      allowNull: false
+    },
     api_id: {
       type: DataTypes.STRING(191),
       allowNull: false,
       unique: true
-    },
-    shard_id: {
-      type: DataTypes.STRING(191),
-      allowNull: false
     },
     player_api_id: {
       type: DataTypes.STRING(191),
@@ -26,6 +26,10 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false
     },
     created_at: {
+      type: DataTypes.TIME,
+      allowNull: true
+    },
+    series: {
       type: DataTypes.TIME,
       allowNull: true
     },
@@ -51,6 +55,10 @@ module.exports = function(sequelize, DataTypes) {
     },
     first_afk_time: {
       type: "DOUBLE",
+      allowNull: false
+    },
+    gold: {
+      type: DataTypes.INTEGER(11),
       allowNull: false
     },
     gold_mine_captures: {
@@ -81,6 +89,10 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.INTEGER(11),
       allowNull: false
     },
+    non_jungle_minion_kills: {
+      type: DataTypes.INTEGER(11),
+      allowNull: false
+    },
     skill_tier: {
       type: DataTypes.INTEGER(11),
       allowNull: false
@@ -103,6 +115,8 @@ module.exports = function(sequelize, DataTypes) {
     }
   }, {
     tableName: 'participant',
-    timestamps: false
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

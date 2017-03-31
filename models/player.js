@@ -8,6 +8,10 @@ module.exports = function(sequelize, DataTypes) {
       primaryKey: true,
       autoIncrement: true
     },
+    shard_id: {
+      type: DataTypes.STRING(191),
+      allowNull: true
+    },
     api_id: {
       type: DataTypes.STRING(191),
       allowNull: false,
@@ -21,11 +25,11 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(191),
       allowNull: false
     },
-    shard_id: {
-      type: DataTypes.STRING(191),
-      allowNull: false
-    },
     last_match_created_date: {
+      type: DataTypes.TIME,
+      allowNull: true
+    },
+    last_update: {
       type: DataTypes.TIME,
       allowNull: true
     },
@@ -43,6 +47,8 @@ module.exports = function(sequelize, DataTypes) {
     }
   }, {
     tableName: 'player',
-    timestamps: false
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

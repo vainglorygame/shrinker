@@ -8,7 +8,7 @@ module.exports = function(sequelize, DataTypes) {
       primaryKey: true,
       autoIncrement: true
     },
-    participant_id: {
+    participant_api_id: {
       type: DataTypes.STRING(191),
       allowNull: false,
       unique: true
@@ -21,11 +21,14 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(191),
       allowNull: false
     },
-    timeFromStart: {
+    time_from_start: {
       type: DataTypes.INTEGER(11),
       allowNull: false
     }
   }, {
-    tableName: 'participant_item_use'
+    tableName: 'participant_item_use',
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

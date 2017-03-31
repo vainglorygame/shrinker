@@ -25,6 +25,9 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false
     }
   }, {
-    tableName: 'hero_dimension'
+    tableName: 'hero_dimension',
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

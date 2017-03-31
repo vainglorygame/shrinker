@@ -13,8 +13,16 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       unique: true
     },
+    shard_id: {
+      type: DataTypes.STRING(191),
+      allowNull: false
+    },
+    series: {
+      type: DataTypes.STRING(191),
+      allowNull: true
+    },
     created_at: {
-      type: DataTypes.DATE,
+      type: DataTypes.TIME,
       allowNull: false,
       defaultValue: sequelize.literal('CURRENT_TIMESTAMP')
     },
@@ -23,14 +31,6 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false
     },
     game_mode: {
-      type: DataTypes.STRING(191),
-      allowNull: false
-    },
-    series: {
-      type: DataTypes.STRING(191),
-      allowNull: true
-    },
-    shard_id: {
       type: DataTypes.STRING(191),
       allowNull: false
     },
@@ -44,6 +44,8 @@ module.exports = function(sequelize, DataTypes) {
     }
   }, {
     tableName: 'match',
-    timestamps: false
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };

@@ -1,7 +1,0 @@
-{
-    "additional": {
-        "timestamps": false,
-        "underscored": true,
-        "freezeTableName": true
-    }
-}

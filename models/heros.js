@@ -77,6 +77,9 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false
     }
   }, {
-    tableName: 'heros'
+    tableName: 'heros',
+    timestamps: false,
+    underscored: true,
+    freezeTableName: true
   });
 };
