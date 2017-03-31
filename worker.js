@@ -12,7 +12,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
 (async () => {
     let seq = new Seq(DATABASE_URI),
-        model = require("./model")(seq, Seq),
+        model = require("../orm/model")(seq, Seq),
         rabbit = await amqp.connect(RABBITMQ_URI),
         ch = await rabbit.createChannel();
 
