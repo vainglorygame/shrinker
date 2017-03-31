@@ -41,10 +41,6 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(191),
       allowNull: false
     },
-    team_color: {
-      type: DataTypes.STRING(191),
-      allowNull: false
-    },
     turret_kills: {
       type: DataTypes.INTEGER(11),
       allowNull: false

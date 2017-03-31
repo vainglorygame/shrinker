@@ -59,7 +59,7 @@ module.exports = function(sequelize, DataTypes) {
     },
     gold: {
       type: DataTypes.INTEGER(11),
-      allowNull: false
+      allowNull: true
     },
     gold_mine_captures: {
       type: DataTypes.INTEGER(11),
