@@ -110,6 +110,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                 await Promise.all(match.rosters.map(async (roster) => {
                     roster.match_api_id = match.api_id;
                     roster.shard_id = match.shard_id;
+                    roster.created_at = match.created_at;
 
                     await model.Roster.upsert(roster, {
                         include: [ model.Participant/*, model.Team */],
@@ -119,7 +120,9 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     await Promise.all(roster.participants.map(async (participant) => {
                         participant.shard_id = roster.shard_id;
                         participant.roster_api_id = roster.api_id;
+                        participant.created_at = roster.created_at;
                         participant.player_api_id = participant.player.api_id;
+                        
                         await model.Participant.upsert(participant, {
                             include: [ model.Player ],
                             transaction: transaction
