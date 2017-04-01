@@ -7,7 +7,7 @@ var amqp = require("amqplib"),
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     DATABASE_URI = process.env.DATABASE_URI || "sqlite:///db.sqlite",
-    BATCHSIZE = process.env.PROCESSOR_BATCH || 50,  // matches
+    BATCHSIZE = process.env.PROCESSOR_BATCH || 50 * (6 + 5),  // objects
     IDLE_TIMEOUT = process.env.PROCESSOR_IDLETIMEOUT || 500;  // ms
 
 (async () => {
@@ -26,6 +26,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     await seq.sync();
 
     await ch.assertQueue("process", {durable: true});
+    await ch.assertQueue("compile", {durable: true});
     // as long as the queue is filled, msg are not ACKed
     // server sends as long as there are less than `prefetch` unACKed
     await ch.prefetch(BATCHSIZE);
@@ -100,7 +101,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
                 // upsert match
                 await model.Match.upsert(match, {
-                    include: [ model.Roster, model.Asset ]
+                    include: [ model.Roster, model.Asset ],
+                    transaction: transaction
                 });
 
                 // upsert children
@@ -110,7 +112,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     roster.shard_id = match.shard_id;
 
                     await model.Roster.upsert(roster, {
-                        include: [ model.Participant/*, model.Team */]
+                        include: [ model.Participant/*, model.Team */],
+                        transaction: transaction
                     });
 
                     await Promise.all(roster.participants.map(async (participant) => {
@@ -118,7 +121,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                         participant.roster_api_id = roster.api_id;
                         participant.player_api_id = participant.player.api_id;
                         await model.Participant.upsert(participant, {
-                            include: [ model.Player ]
+                            include: [ model.Player ],
+                            transaction: transaction
                         });
                     }));
 
@@ -132,7 +136,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                 await Promise.all(match.assets.map(async (asset) => {
                     asset.match_api_id = match.api_id;
                     asset.shard_id = match.shard_id;
-                    await model.Asset.upsert(asset);
+                    await model.Asset.upsert(asset, { transaction: transaction });
                 }));
             }));
 
@@ -140,7 +144,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             // because they are duplicated among a page of matches
             // as provided by apigrabber
             console.log("processing", players.length, "players", teams.length, "teams");
-            await Promise.all(players.map(async (p) => await model.Player.upsert(p) ));
+            await Promise.all(players.map(async (p) => await model.Player.upsert(p, { transaction: transaction }) ));
             //await Promise.all(teams.map(async (t) => await model.Team.upsert(flatten(t)) ));
 
             // COMMIT
@@ -150,8 +154,26 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
             // notify web
             await Promise.all(players.map(async (p) => await ch.publish("amq.topic", p.name, new Buffer("process_commit")) ));
+            // notify compiler
+            await Promise.all(matches.map(async (m) => {
+                await Promise.all(m.rosters.map(async (r) => {
+                    await Promise.all(r.participants.map(async (p) => {
+                        await ch.sendToQueue("compile", new Buffer(JSON.stringify(p)), {
+                            persistent: true,
+                            type: "participant"
+                        });
+                    }));
+                }));
+            }));
+            await Promise.all(players.map(async (p) =>
+                await ch.sendToQueue("compile", new Buffer(JSON.stringify(p)), {
+                    persistent: true,
+                    type: "player"
+                })
+            ));
         } catch (err) {  // TODO catch only SQL error, also catch errors in the promises
             console.error(err);
+            await transaction.rollback();
             await ch.nack(msgs.pop(), true, true);  // nack all messages until the last and requeue
             // TODO don't requeue broken records
         }
