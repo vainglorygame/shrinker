@@ -1,0 +1,17 @@
+{
+  "name": "compiler",
+  "version": "2.0.0",
+  "description": "",
+  "main": "model.js",
+  "dependencies": {
+    "amqplib": "^0.5.1",
+    "mysql": "^2.13.0",
+    "sequelize": "^3.30.4"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "schneefux",
+  "license": "UNLICENSED"
+}
