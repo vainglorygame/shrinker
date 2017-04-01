@@ -3,7 +3,8 @@
 'use strict';
 
 var amqp = require("amqplib"),
-    Seq = require("sequelize");
+    Seq = require("sequelize"),
+    snakeCaseKeys = require("snakecase-keys");
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     DATABASE_URI = process.env.DATABASE_URI || "sqlite:///db.sqlite",
@@ -19,11 +20,18 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     let queue = [],
         timer = undefined;
 
+    let item_map = {},  // *1000_Item_HalcyonPotion* to id
+        item_name_map = {};  // 'Halcyon Potion' to id
+
     /* recreate for debugging
     await seq.query("SET FOREIGN_KEY_CHECKS=0");
     await seq.sync({force: true});
     */
     await seq.sync();
+    let items = await model.Item.findAll();
+    items.map((item) => item_map[item.api_id] = item.id);
+    items.map((item) => item_name_map[item.name] = item.id);
+    console.error("item map", item_map);
 
     await ch.assertQueue("process", {durable: true});
     await ch.assertQueue("compile", {durable: true});
@@ -78,26 +86,64 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     let pl = flatten(JSON.parse(m.content));
                     pl.shard_id = m.properties.headers.shard;  // TODO workaround for empty API field
                     return pl;
-                }),
-                teams = msgs.filter((m) => m.properties.type == "team").map((m) => {
-                    let t = flatten(JSON.parse(m.content));
-                    t.shard_id = m.properties.headers.shard;
-                    return t;
                 });
 
             await Promise.all(matches.map(async (match) => {
                 console.log("processing match", match.id);
 
                 // flatten jsonapi nested response into our db structure-like shape
+                // also, push missing fields and snakecasify
                 match.rosters = match.rosters.map((roster) => {
+                    roster.matchApiId = match.id;
+                    roster.shardId = match.shardId;
+                    roster.createdAt = match.createdAt;
+
                     roster.participants = roster.participants.map((participant) => {
-                        participant.player = flatten(participant.player);
-                        return flatten(participant);
+                        participant.shardId = roster.shardId;
+                        participant.rosterApiId = roster.id;
+                        participant.createdAt = roster.createdAt;
+                        participant.playerApiId = participant.player.id;
+                        
+                        // map items
+                        // use *0000_Item_Name* map
+                        let itms = [],
+                            // map from name/api_id to our schema
+                            item_use = (arr, action, map) =>
+                                arr.map((item) => { return {
+                                    participant_api_id: participant.id,
+                                    item_id: map[item], 
+                                    action: action
+                                } }),
+                            item_arr_from_obj = (obj) => 
+                                [].concat(...  // 3 flatten
+                                    Object.entries(obj).map(  // 1 map over (key, value)
+                                        (tuple) => Array(tuple[1]).fill(tuple[0])))  // 2 create Array [key] * value
+                        //itms = itms.concat(item_use(participant.attributes.stats.items, "final", item_name_map));
+                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemGrants), "grant", item_map));
+                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemUses), "use", item_map));
+                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemSells), "sell", item_map));
+
+                        // TODO for debugging:
+                        let items_missing =
+                            [].concat(...
+                                Object.keys(participant.attributes.stats.itemGrants).filter((i) => Object.keys(item_map).indexOf(i) == -1),
+                                participant.attributes.stats.items.filter((i) => Object.keys(item_name_map).indexOf(i) == -1));
+                        if (items_missing.length > 0) console.error("item mappings missing for", items_missing);
+
+                        // redefine participant.items for our custom map
+                        participant.attributes.stats.items = itms;
+
+                        participant.player = snakeCaseKeys(flatten(participant.player));
+                        return snakeCaseKeys(flatten(participant));
                     });
-                    return flatten(roster);
+                    return snakeCaseKeys(flatten(roster));
                 });
-                match.assets = match.assets.map((asset) => flatten(asset));
-                match = flatten(match);
+                match.assets = match.assets.map((asset) => {
+                    asset.matchApiId = match.id;
+                    asset.shardId = match.shardId;
+                    return snakeCaseKeys(flatten(asset));
+                });
+                match = snakeCaseKeys(flatten(match));
 
                 // upsert match
                 await model.Match.upsert(match, {
@@ -108,47 +154,34 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                 // upsert children
                 // before, add foreign keys and other missing information (shardId)
                 await Promise.all(match.rosters.map(async (roster) => {
-                    roster.match_api_id = match.api_id;
-                    roster.shard_id = match.shard_id;
-                    roster.created_at = match.created_at;
-
                     await model.Roster.upsert(roster, {
-                        include: [ model.Participant/*, model.Team */],
+                        include: [ model.Participant ],
                         transaction: transaction
                     });
-
                     await Promise.all(roster.participants.map(async (participant) => {
-                        participant.shard_id = roster.shard_id;
-                        participant.roster_api_id = roster.api_id;
-                        participant.created_at = roster.created_at;
-                        participant.player_api_id = participant.player.api_id;
-                        
                         await model.Participant.upsert(participant, {
                             include: [ model.Player ],
                             transaction: transaction
                         });
+                        await Promise.all(participant.items.map(async (item) =>
+                            await model.ParticipantItemUse.upsert(item, {
+                                include: [ model.Participant ],
+                                transaction: transaction
+                            })
+                        ));
                     }));
-
-                    if (roster.team != null) {
-                        roster.team.shard_id = roster.shard_id;
-                        roster.team.roster_api_id = roster.api_id;
-                        /*await model.Team.upsert(roster.team);*/
-                    }
                 }));
 
                 await Promise.all(match.assets.map(async (asset) => {
-                    asset.match_api_id = match.api_id;
-                    asset.shard_id = match.shard_id;
                     await model.Asset.upsert(asset, { transaction: transaction });
                 }));
             }));
 
-            // teams and players are upserted seperately
+            // players are upserted seperately
             // because they are duplicated among a page of matches
             // as provided by apigrabber
-            console.log("processing", players.length, "players", teams.length, "teams");
-            await Promise.all(players.map(async (p) => await model.Player.upsert(p, { transaction: transaction }) ));
-            //await Promise.all(teams.map(async (t) => await model.Team.upsert(flatten(t)) ));
+            console.log("processing", players.length, "players");
+            await Promise.all(players.map(async (p) => await model.Player.upsert(snakeCaseKeys(p), { transaction: transaction }) ));
 
             // COMMIT
             await transaction.commit();
