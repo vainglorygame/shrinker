@@ -59,6 +59,27 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                 let player_api_id = player.api_id,
                     player_ext = {};
 
+                // set last_match_created_date
+                let lmcd = (await model.Participant.findOne({
+                    where: {
+                        player_api_id: player_api_id
+                    },
+                    attributes: [ [seq.col("roster.match.created_at"), "last_match_created_date"] ],
+                    include: [ {
+                        model: model.Roster,
+                        attributes: [],
+                        include: [ {
+                            model: model.Match,
+                            attributes: []
+                        } ]
+                    } ],
+                    order: [
+                        [seq.col("last_match_created_date"), "DESC"]
+                    ]
+                })).get("last_match_created_date");
+                await model.Player.update({ last_match_created_date: lmcd }, { where: { api_id: player_api_id } });
+
+                // calculate "extended" player_ext fields like wins per patch
                 player_ext.player_api_id = player_api_id;
                 //player_ext.series = ""
 
