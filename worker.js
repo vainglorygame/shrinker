@@ -57,9 +57,6 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         clearTimeout(timer);
         timer = undefined;
 
-        // BEGIN
-        let transaction = await seq.transaction({ autocommit: false });
-
         // helper to convert API response into flat JSON
         // db structure is (almost) 1:1 the API structure
         // so we can insert the flat API response as-is
@@ -76,153 +73,184 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             return o;
         }
 
-        // UPSERT
+        // we aggregate record objects to do a bulk insert
+        let match_records = [],
+            roster_records = [],
+            participant_records = [],
+            player_records = [],
+            asset_records = [],
+            participant_item_records = [];
+
+        // populate `_records`
+        msgs.map((msg) => {
+            let match = JSON.parse(msg.content);
+            console.log("processing match", match.id);
+
+            // flatten jsonapi nested response into our db structure-like shape
+            // also, push missing fields and snakecasify
+            match.rosters = match.rosters.map((roster) => {
+                roster.matchApiId = match.id;
+                roster.shardId = match.shardId;
+                roster.createdAt = match.createdAt;
+
+                roster.participants = roster.participants.map((participant) => {
+                    participant.shardId = roster.shardId;
+                    participant.rosterApiId = roster.id;
+                    participant.createdAt = roster.createdAt;
+                    participant.playerApiId = participant.player.id;
+
+                    // API bug fixes
+                    // items on AFK is `null` not `{}`
+                    participant.attributes.stats.itemGrants = participant.attributes.stats.itemGrants || {};
+                    participant.attributes.stats.itemSells = participant.attributes.stats.itemSells || {};
+                    participant.attributes.stats.itemUses = participant.attributes.stats.itemUses || {};
+                    // jungle_kills is `null` in BR
+                    participant.attributes.stats.jungleKills = participant.attributes.stats.jungleKills || 0;
+
+                    // map items: names/id -> name -> db
+                    let itms = [],
+                        item_use = (arr, action) =>
+                            arr.map((item) => { return {
+                                participant_api_id: participant.id,
+                                item_id: item_db_map[item_name_map[item]],
+                                action: action
+                            } }),
+                        item_arr_from_obj = (obj) =>
+                            [].concat(...  // 3 flatten
+                                Object.entries(obj).map(  // 1 map over (key, value)
+                                    (tuple) => Array(tuple[1]).fill(tuple[0])))  // 2 create Array [key] * value
+
+                    itms = itms.concat(item_use(participant.attributes.stats.items, "final"));
+                    itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemGrants), "grant"));
+                    itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemUses), "use"));
+                    itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemSells), "sell"));
+
+                    // for debugging:
+                    let items_missing_name = [].concat(...
+                        Object.keys(participant.attributes.stats.itemGrants),
+                        participant.attributes.stats.items)
+                        .filter((i) => Object.keys(item_name_map).indexOf(i) == -1);
+                    if (items_missing_name.length > 0) console.error("missing API name -> name mapping for", items_missing_name);
+
+                    let items_missing_db = [].concat(...
+                        Object.keys(participant.attributes.stats.itemGrants),
+                        participant.attributes.stats.items)
+                        .filter((i) => Object.keys(item_db_map).indexOf(item_name_map[i]) == -1);
+                    if (items_missing_db.length > 0) console.error("missing name -> DB ID mapping for", items_missing_db);
+
+                    // redefine participant.items for our custom map
+                    participant.attributes.stats.items = itms;
+
+                    participant.player.shardId = participant.shardId;
+                    participant.player = snakeCaseKeys(flatten(participant.player));
+                    return snakeCaseKeys(flatten(participant));
+                });
+                return snakeCaseKeys(flatten(roster));
+            });
+            match.assets = match.assets.map((asset) => {
+                asset.matchApiId = match.id;
+                asset.shardId = match.shardId;
+                return snakeCaseKeys(flatten(asset));
+            });
+            match = snakeCaseKeys(flatten(match));
+
+            // after conversion, create the array of records
+            //
+            // helper: true if object is not in record arr
+            let is_in = (arr, obj) => arr.map((o) => o.api_id).indexOf(obj.api_id) > -1;
+
+            // there is a low chance of a match being duplicated in a batch,
+            // skip it and its children
+            if (!is_in(match_records, match)) {
+                match_records.push(match);
+                match.rosters.map((r) => {
+                    roster_records.push(r);
+                    r.participants.map((p) => {
+                        participant_records.push(p);
+                        // deduplicate player
+                        // in a batch, it is very likely that players are duplicated
+                        // so this improves performance a bit
+                        if (!is_in(player_records, p.player)) player_records.push(p.player);
+                        p.items.map((i) => {
+                            participant_item_records.push(i);
+                        });
+                    });
+                });
+                match.assets.map((a) => {
+                    asset_records.push(a);
+                });
+            }
+        });
+
+        // now access db
         try {
-            // apigrabber sends to queue with a custom "type" so processor can filter
-            // and insert players and matches seperately
-            let matches = msgs.filter((m) => m.properties.type == "match").map((m) => JSON.parse(m.content)),
-                players = msgs.filter((m) => m.properties.type == "player").map((m) => {
-                    let pl = flatten(JSON.parse(m.content));
-                    pl.shard_id = m.properties.headers.shard;  // TODO workaround for empty API field
-                    return pl;
-                });
-
-            await Promise.all(matches.map(async (match) => {
-                console.log("processing match", match.id);
-
-                // flatten jsonapi nested response into our db structure-like shape
-                // also, push missing fields and snakecasify
-                match.rosters = match.rosters.map((roster) => {
-                    roster.matchApiId = match.id;
-                    roster.shardId = match.shardId;
-                    roster.createdAt = match.createdAt;
-
-                    roster.participants = roster.participants.map((participant) => {
-                        participant.shardId = roster.shardId;
-                        participant.rosterApiId = roster.id;
-                        participant.createdAt = roster.createdAt;
-                        participant.playerApiId = participant.player.id;
-
-                        // API bug fixes
-                        // items on AFK is `null` not `{}`
-                        participant.attributes.stats.itemGrants = participant.attributes.stats.itemGrants || {};
-                        participant.attributes.stats.itemSells = participant.attributes.stats.itemSells || {};
-                        participant.attributes.stats.itemUses = participant.attributes.stats.itemUses || {};
-                        // jungle_kills is `null` in BR
-                        participant.attributes.stats.jungleKills = participant.attributes.stats.jungleKills || 0;
-                        
-                        // map items: names/id -> name -> db
-                        let itms = [],
-                            item_use = (arr, action) =>
-                                arr.map((item) => { return {
-                                    participant_api_id: participant.id,
-                                    item_id: item_db_map[item_name_map[item]],
-                                    action: action
-                                } }),
-                            item_arr_from_obj = (obj) => 
-                                [].concat(...  // 3 flatten
-                                    Object.entries(obj).map(  // 1 map over (key, value)
-                                        (tuple) => Array(tuple[1]).fill(tuple[0])))  // 2 create Array [key] * value
-                        itms = itms.concat(item_use(participant.attributes.stats.items, "final"));
-                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemGrants), "grant"));
-                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemUses), "use"));
-                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemSells), "sell"));
-
-                        // for debugging:
-                        let items_missing_name = [].concat(...
-                            Object.keys(participant.attributes.stats.itemGrants),
-                            participant.attributes.stats.items)
-                            .filter((i) => Object.keys(item_name_map).indexOf(i) == -1);
-                        if (items_missing_name.length > 0) console.error("missing API name -> name mapping for", items_missing_name);
-
-                        let items_missing_db = [].concat(...
-                            Object.keys(participant.attributes.stats.itemGrants),
-                            participant.attributes.stats.items)
-                            .filter((i) => Object.keys(item_db_map).indexOf(item_name_map[i]) == -1);
-                        if (items_missing_db.length > 0) console.error("missing name -> DB ID mapping for", items_missing_db);
-
-                        // redefine participant.items for our custom map
-                        participant.attributes.stats.items = itms;
-
-                        participant.player = snakeCaseKeys(flatten(participant.player));
-                        return snakeCaseKeys(flatten(participant));
-                    });
-                    return snakeCaseKeys(flatten(roster));
-                });
-                match.assets = match.assets.map((asset) => {
-                    asset.matchApiId = match.id;
-                    asset.shardId = match.shardId;
-                    return snakeCaseKeys(flatten(asset));
-                });
-                match = snakeCaseKeys(flatten(match));
-
-                // upsert match
-                await model.Match.upsert(match, {
-                    include: [ model.Roster, model.Asset ],
-                    transaction: transaction
-                });
-
-                // upsert children
-                // before, add foreign keys and other missing information (shardId)
-                await Promise.all(match.rosters.map(async (roster) => {
-                    await model.Roster.upsert(roster, {
-                        include: [ model.Participant ],
+            console.log("inserting batch into db");
+            // upsert whole batch in parallel
+            await seq.transaction({ autocommit: false }, (transaction) => {
+                return Promise.all([
+                    model.Match.bulkCreate(match_records, {
+                        include: [ model.Roster, model.Asset ],
+                        updateOnDuplicate: [],  // all
                         transaction: transaction
-                    });
-                    await Promise.all(roster.participants.map(async (participant) => {
-                        await model.Participant.upsert(participant, {
-                            include: [ model.Player ],
-                            transaction: transaction
-                        });
-                        await Promise.all(participant.items.map(async (item) =>
-                            await model.ParticipantItemUse.upsert(item, {
-                                include: [ model.Participant ],
-                                transaction: transaction
-                            })
-                        ));
-                    }));
-                }));
+                    }),
+                    model.Roster.bulkCreate(roster_records, {
+                        include: [ model.Roster ],
+                        updateOnDuplicate: [],  // all
+                        transaction: transaction
+                    }),
+                    model.Participant.bulkCreate(participant_records, {
+                        include: [ model.Player ],
+                        updateOnDuplicate: [],  // all
+                        transaction: transaction
+                    }),
+                    model.Player.bulkCreate(player_records, {
+                        updateOnDuplicate: [],  // all
+                        transaction: transaction
+                    }),
+                    model.ParticipantItemUse.bulkCreate(participant_item_records, {
+                        include: [ model.Participant ],
+                        updateOnDuplicate: [],  // all
+                        transaction: transaction
+                    }),
+                    model.Asset.bulkCreate(asset_records, {
+                        updateOnDuplicate: [],  // all
+                        transaction: transaction
+                    })
+                ]);
+            });
+        } catch (err) {
+            // this should only happen for Deadlocks in prod
+            // it *must not* fail due to broken schema or missing dependency
+            // TODO: eliminate such cases earlier in the chain
+            // and immediately NACK those broken matches, requeueing only the rest
+            console.error(err);
+            await ch.nack(msgs.pop(), true, true);  // nack all messages until the last and requeue
+            return;  // give up
+        }
 
-                await Promise.all(match.assets.map(async (asset) => {
-                    await model.Asset.upsert(asset, { transaction: transaction });
-                }));
-            }));
+        console.log("acking batch");
+        await ch.ack(msgs.pop(), true);  // ack all messages until the last
 
-            // players are upserted seperately
-            // because they are duplicated among a page of matches
-            // as provided by apigrabber
-            console.log("processing", players.length, "players");
-            await Promise.all(players.map(async (p) => await model.Player.upsert(snakeCaseKeys(p), { transaction: transaction }) ));
-
-            // COMMIT
-            await transaction.commit();
-            console.log("acking batch");
-            await ch.ack(msgs.pop(), true);  // ack all messages until the last
-
-            // notify web
-            await Promise.all(players.map(async (p) => await ch.publish("amq.topic", p.name, new Buffer("process_commit")) ));
-            // notify compiler
-            await Promise.all(matches.map(async (m) => {
-                await Promise.all(m.rosters.map(async (r) => {
-                    await Promise.all(r.participants.map(async (p) => {
-                        await ch.sendToQueue("compile", new Buffer(JSON.stringify(p)), {
-                            persistent: true,
-                            type: "participant"
-                        });
-                    }));
-                }));
-            }));
-            await Promise.all(players.map(async (p) =>
+        // notify compiler
+        await Promise.all([
+            Promise.all(participant_records.map(async (p) =>
+                await ch.sendToQueue("compile", new Buffer(JSON.stringify(p)), {
+                    persistent: true,
+                    type: "participant"
+                })
+            )),
+            Promise.all(player_records.map(async (p) =>
                 await ch.sendToQueue("compile", new Buffer(JSON.stringify(p)), {
                     persistent: true,
                     type: "player"
                 })
-            ));
-        } catch (err) {  // TODO catch only SQL error, also catch errors in the promises
-            console.error(err);
-            await transaction.rollback();
-            await ch.nack(msgs.pop(), true, true);  // nack all messages until the last and requeue
-            // TODO don't requeue broken records
-        }
+            ))
+        ]);
+
+        // notify web
+        await Promise.all(player_records.map(async (p) =>
+            await ch.publish("amq.topic", p.name, new Buffer("process_commit")) ));
+        if (match_records.length > 0)
+            await ch.publish("amq.topic", "global", new Buffer("matches_update"));
     }
 })();
