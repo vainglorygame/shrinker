@@ -45,17 +45,20 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         clearTimeout(timer);
         timer = undefined;
 
-        // BEGIN
-        let transaction = await seq.transaction({ autocommit: false });
+        // aggregate & bulk insert
+        let player_ext_records = [],
+            participant_ext_records = [],
+            player_updates = [];  // [[what, where]]
 
-        // UPSERT
-        try {
-            // processor sends to queue with a custom "type" so compiler can filter
-            // m.content: player.api_id
-            let players      = msgs.filter((m) => m.properties.type == "player").map((m) => JSON.parse(m.content)),
-                participants = msgs.filter((m) => m.properties.type == "participant").map((m) => JSON.parse(m.content));
+        // processor sends to queue with a custom "type" so compiler can filter
+        // m.content: player.api_id
+        let players      = msgs.filter((m) => m.properties.type == "player").map((m) => JSON.parse(m.content)),
+            participants = msgs.filter((m) => m.properties.type == "participant").map((m) => JSON.parse(m.content));
 
-            await Promise.all(players.map(async (player) => {
+        // collect information and populate _record arrays
+        await Promise.all([
+            // collect player information
+            Promise.all(players.map(async (player) => {
                 let player_api_id = player.api_id,
                     player_ext = {};
 
@@ -77,25 +80,14 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                         [seq.col("last_match_created_date"), "DESC"]
                     ]
                 })).get("last_match_created_date");
-                await model.Player.update({ last_match_created_date: lmcd }, { where: { api_id: player_api_id } });
+                // do later in the transaction
+                player_updates.push([{ last_match_created_date: lmcd }, { where: { api_id: player_api_id } }]);
 
                 // calculate "extended" player_ext fields like wins per patch
                 player_ext.player_api_id = player_api_id;
                 //player_ext.series = ""
 
                 // TODO parallelize
-
-                player_ext.played = await model.Participant.count({
-                    where: {
-                        player_api_id: player_api_id
-                    }
-                });
-                player_ext.wins = await model.Participant.count({
-                    where: {
-                        player_api_id: player_api_id,
-                        winner: true
-                    }
-                });
 
                 // TODO maybe this can be done in fewer/combined/subqueries
                 let count_matches_where = async (where) => {
@@ -112,6 +104,20 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                         } ]
                     })).get("count");
                 };
+
+                // TODO run in parallel
+                player_ext.played = await model.Participant.count({
+                    where: {
+                        player_api_id: player_api_id
+                    }
+                });
+                player_ext.wins = await model.Participant.count({
+                    where: {
+                        player_api_id: player_api_id,
+                        winner: true
+                    }
+                });
+
                 player_ext.played_casual = await count_matches_where({
                     player_api_id: player_api_id,
                     "$roster.match.game_mode$": "casual"
@@ -131,12 +137,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     "$roster.match.game_mode$": "ranked"
                 });
 
-                await model.PlayerExt.upsert(player_ext, {
-                    include: [ model.Participant ],
-                    transaction: transaction
-                });
-            }));
-            await Promise.all(participants.map(async (api_participant) => {
+                player_ext_records.push(player_ext);
+            })),
+            // calculate participant fields
+            Promise.all(participants.map(async (api_participant) => {
                 let participant = await model.Participant.findOne({
                     where: {
                         api_id: api_participant.api_id
@@ -161,24 +165,37 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                 else
                     participant_ext.kda = (participant.kills + participant.assists) / participant.deaths;
 
-                await model.ParticipantExt.upsert(participant_ext, {
-                    include: [ model.Participant ],
-                    transaction: transaction
-                });
-            }));
+                participant_ext_records.push(participant_ext);
+            }))
+        ]);
 
-            // COMMIT
-            await transaction.commit();
-            console.log("acking batch");
-            await ch.ack(msgs.pop(), true);  // ack all messages until the last
-
-            // notify web
-            await Promise.all(players.map(async (p) => await ch.publish("amq.topic", p.name, new Buffer("compile_commit")) ));
-        } catch (err) {  // TODO catch only SQL error, also catch errors in the promises
+        // load records into db
+        try {
+            console.log("inserting batch into db");
+            await seq.transaction({ autocommit: false }, (transaction) => {
+                return Promise.all([
+                    model.ParticipantExt.bulkCreate(participant_ext_records, {
+                        updateOnDuplicate: [],  // all
+                        transaction: transaction
+                    }),
+                    model.PlayerExt.bulkCreate(player_ext_records, {
+                        updateOnDuplicate: [],  // all
+                        transaction: transaction
+                    }),
+                    player_updates.map(async (pu) =>
+                        await model.Player.update(pu[0], pu[1]))
+                ]);
+            });
+        } catch (err) {
+            // this should only happen for deadlocks or non-data related issues
             console.error(err);
-            await transaction.rollback();
             await ch.nack(msgs.pop(), true, true);  // nack all messages until the last and requeue
-            // TODO don't requeue broken records
+            return;  // give up
         }
+        console.log("acking batch");
+        await ch.ack(msgs.pop(), true);  // ack all messages until the last
+
+        // notify web
+        await Promise.all(players.map(async (p) => await ch.publish("amq.topic", p.name, new Buffer("compile_commit")) ));
     }
 })();
