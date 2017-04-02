@@ -90,11 +90,11 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             // also, push missing fields and snakecasify
             match.rosters = match.rosters.map((roster) => {
                 roster.matchApiId = match.id;
-                roster.shardId = match.shardId;
+                roster.attributes.shardId = match.attributes.shardId;
                 roster.createdAt = match.createdAt;
 
                 roster.participants = roster.participants.map((participant) => {
-                    participant.shardId = roster.shardId;
+                    participant.attributes.shardId = roster.attributes.shardId;
                     participant.rosterApiId = roster.id;
                     participant.createdAt = roster.createdAt;
                     participant.playerApiId = participant.player.id;
@@ -141,7 +141,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     // redefine participant.items for our custom map
                     participant.attributes.stats.items = itms;
 
-                    participant.player.shardId = participant.shardId;
+                    participant.player.attributes.shardId = participant.attributes.shardId;
                     participant.player = snakeCaseKeys(flatten(participant.player));
                     return snakeCaseKeys(flatten(participant));
                 });
@@ -149,7 +149,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             });
             match.assets = match.assets.map((asset) => {
                 asset.matchApiId = match.id;
-                asset.shardId = match.shardId;
+                asset.attributes.shardId = match.attributes.shardId;
                 return snakeCaseKeys(flatten(asset));
             });
             match = snakeCaseKeys(flatten(match));
