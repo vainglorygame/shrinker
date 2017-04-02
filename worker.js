@@ -4,7 +4,8 @@
 
 var amqp = require("amqplib"),
     Seq = require("sequelize"),
-    snakeCaseKeys = require("snakecase-keys");
+    snakeCaseKeys = require("snakecase-keys"),
+    item_name_map = require("../orm/items");
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     DATABASE_URI = process.env.DATABASE_URI || "sqlite:///db.sqlite",
@@ -20,18 +21,16 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     let queue = [],
         timer = undefined;
 
-    let item_map = {},  // *1000_Item_HalcyonPotion* to id
-        item_name_map = {};  // 'Halcyon Potion' to id
+    let item_db_map = {};  // "Halcyon Potion" to id
 
     /* recreate for debugging
     await seq.query("SET FOREIGN_KEY_CHECKS=0");
     await seq.sync({force: true});
     */
     await seq.sync();
-    let items = await model.Item.findAll();
-    items.map((item) => item_map[item.api_id] = item.id);
-    items.map((item) => item_name_map[item.name] = item.id);
-    console.error("item map", item_map);
+    // TODO instead of object, use Map
+    await model.Item.findAll()
+        .map((item) => item_db_map[item.name] = item.id);
 
     await ch.assertQueue("process", {durable: true});
     await ch.assertQueue("compile", {durable: true});
@@ -103,32 +102,44 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                         participant.rosterApiId = roster.id;
                         participant.createdAt = roster.createdAt;
                         participant.playerApiId = participant.player.id;
+
+                        // API bug fixes
+                        // items on AFK is `null` not `{}`
+                        participant.attributes.stats.itemGrants = participant.attributes.stats.itemGrants || {};
+                        participant.attributes.stats.itemSells = participant.attributes.stats.itemSells || {};
+                        participant.attributes.stats.itemUses = participant.attributes.stats.itemUses || {};
+                        // jungle_kills is `null` in BR
+                        participant.attributes.stats.jungleKills = participant.attributes.stats.jungleKills || 0;
                         
-                        // map items
-                        // use *0000_Item_Name* map
+                        // map items: names/id -> name -> db
                         let itms = [],
-                            // map from name/api_id to our schema
-                            item_use = (arr, action, map) =>
+                            item_use = (arr, action) =>
                                 arr.map((item) => { return {
                                     participant_api_id: participant.id,
-                                    item_id: map[item], 
+                                    item_id: item_db_map[item_name_map[item]],
                                     action: action
                                 } }),
                             item_arr_from_obj = (obj) => 
                                 [].concat(...  // 3 flatten
                                     Object.entries(obj).map(  // 1 map over (key, value)
                                         (tuple) => Array(tuple[1]).fill(tuple[0])))  // 2 create Array [key] * value
-                        //itms = itms.concat(item_use(participant.attributes.stats.items, "final", item_name_map));
-                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemGrants), "grant", item_map));
-                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemUses), "use", item_map));
-                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemSells), "sell", item_map));
+                        itms = itms.concat(item_use(participant.attributes.stats.items, "final"));
+                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemGrants), "grant"));
+                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemUses), "use"));
+                        itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemSells), "sell"));
 
-                        // TODO for debugging:
-                        let items_missing =
-                            [].concat(...
-                                Object.keys(participant.attributes.stats.itemGrants).filter((i) => Object.keys(item_map).indexOf(i) == -1),
-                                participant.attributes.stats.items.filter((i) => Object.keys(item_name_map).indexOf(i) == -1));
-                        if (items_missing.length > 0) console.error("item mappings missing for", items_missing);
+                        // for debugging:
+                        let items_missing_name = [].concat(...
+                            Object.keys(participant.attributes.stats.itemGrants),
+                            participant.attributes.stats.items)
+                            .filter((i) => Object.keys(item_name_map).indexOf(i) == -1);
+                        if (items_missing_name.length > 0) console.error("missing API name -> name mapping for", items_missing_name);
+
+                        let items_missing_db = [].concat(...
+                            Object.keys(participant.attributes.stats.itemGrants),
+                            participant.attributes.stats.items)
+                            .filter((i) => Object.keys(item_db_map).indexOf(item_name_map[i]) == -1);
+                        if (items_missing_db.length > 0) console.error("missing name -> DB ID mapping for", items_missing_db);
 
                         // redefine participant.items for our custom map
                         participant.attributes.stats.items = itms;
