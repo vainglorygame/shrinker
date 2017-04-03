@@ -90,9 +90,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         msgs.filter((m) => m.properties.type == "player").map((msg) => {
             let players = JSON.parse(msg.content);
             players.map(async (p) => {
-                player = flatten(p);
-                if (!is_in(player_records, p.player))
-                    player_records.push(p.player);
+                console.log(p);
+                let player = flatten(p);
+                if (!is_in(player_records, player))
+                    player_records.push(player);
             });
         });
 
