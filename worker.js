@@ -63,7 +63,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     player_ext = {};
 
                 // set last_match_created_date
-                let lmcd = (await model.Participant.findOne({
+                let record = await model.Participant.findOne({
                     where: {
                         player_api_id: player_api_id
                     },
@@ -79,9 +79,13 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     order: [
                         [seq.col("last_match_created_date"), "DESC"]
                     ]
-                })).get("last_match_created_date");
-                // do later in the transaction
-                player_updates.push([{ last_match_created_date: lmcd }, { where: { api_id: player_api_id } }]);
+                });
+                if (record != null)
+                    // do later in the transaction
+                    player_updates.push([
+                        { last_match_created_date: record.get("last_match_created_date") },
+                        { where: { api_id: player_api_id } }
+                    ]);
 
                 // calculate "extended" player_ext fields like wins per patch
                 player_ext.player_api_id = player_api_id;
@@ -91,7 +95,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
                 // TODO maybe this can be done in fewer/combined/subqueries
                 let count_matches_where = async (where) => {
-                    return (await model.Participant.findOne({
+                    let record = await model.Participant.findOne({
                         where: where,
                         attributes: [[seq.fn("COUNT", "$roster.match$"), "count"]],
                         include: [ {
@@ -102,7 +106,9 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                                 attributes: []
                             } ]
                         } ]
-                    })).get("count");
+                    })
+                    if (record == null) return 0;
+                    return record.get("count");
                 };
 
                 // TODO run in parallel
