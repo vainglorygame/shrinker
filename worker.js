@@ -142,15 +142,15 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     participant.attributes.stats.items = itms;
 
                     participant.player.attributes.shardId = participant.attributes.shardId;
-                    participant.player = snakeCaseKeys(flatten(participant.player));
-                    return snakeCaseKeys(flatten(participant));
+                    participant.player = flatten(participant.player);
+                    return flatten(participant);
                 });
-                return snakeCaseKeys(flatten(roster));
+                return flatten(roster);
             });
             match.assets = match.assets.map((asset) => {
                 asset.matchApiId = match.id;
                 asset.attributes.shardId = match.attributes.shardId;
-                return snakeCaseKeys(flatten(asset));
+                return flatten(asset);
             });
             match = snakeCaseKeys(flatten(match));
 
