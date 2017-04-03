@@ -13,7 +13,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     IDLE_TIMEOUT = process.env.PROCESSOR_IDLETIMEOUT || 500;  // ms
 
 (async () => {
-    let seq = new Seq(DATABASE_URI),
+    let seq = new Seq(DATABASE_URI, { logging: () => {} }),
         model = require("../orm/model")(seq, Seq),
         rabbit = await amqp.connect(RABBITMQ_URI),
         ch = await rabbit.createChannel();
