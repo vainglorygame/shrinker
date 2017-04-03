@@ -260,7 +260,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
         // notify web
         await Promise.all(player_records.map(async (p) =>
-            await ch.publish("amq.topic", p.name, new Buffer("process_commit")) ));
+            await ch.publish("amq.topic", "player." + p.name, new Buffer("matches_update")) ));
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
     }
