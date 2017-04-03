@@ -73,6 +73,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             return o;
         }
 
+        // helper: true if object is not in record arr
+        let is_in = (arr, obj) => arr.map((o) => o.api_id).indexOf(obj.api_id) > -1;
+
+
         // we aggregate record objects to do a bulk insert
         let match_records = [],
             roster_records = [],
@@ -82,7 +86,18 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             participant_item_records = [];
 
         // populate `_records`
-        msgs.map((msg) => {
+        // data from `/player`
+        msgs.filter((m) => m.properties.type == "player").map((msg) => {
+            let players = JSON.parse(msg.content);
+            players.map(async (p) => {
+                player = flatten(p);
+                if (!is_in(player_records, p.player))
+                    player_records.push(p.player);
+            });
+        });
+
+        // data from `/matches`
+        msgs.filter((m) => m.properties.type == "match").map((msg) => {
             let match = JSON.parse(msg.content);
             console.log("processing match", match.id);
 
@@ -155,10 +170,6 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             match = snakeCaseKeys(flatten(match));
 
             // after conversion, create the array of records
-            //
-            // helper: true if object is not in record arr
-            let is_in = (arr, obj) => arr.map((o) => o.api_id).indexOf(obj.api_id) > -1;
-
             // there is a low chance of a match being duplicated in a batch,
             // skip it and its children
             if (!is_in(match_records, match)) {
