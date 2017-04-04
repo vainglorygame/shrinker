@@ -192,8 +192,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         // load records into db
         try {
             console.log("inserting batch into db");
-            await seq.transaction({ autocommit: false }, (transaction) => {
-                return Promise.all([
+            await seq.transaction({ autocommit: false }, async (transaction) => {
+                await Promise.all([
                     model.ParticipantExt.bulkCreate(participant_ext_records, {
                         updateOnDuplicate: [],  // all
                         transaction: transaction
