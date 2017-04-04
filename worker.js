@@ -91,6 +91,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             let players = JSON.parse(msg.content);
             players.map(async (p) => {
                 let player = flatten(p);
+                console.log("processing player", player.name);
                 if (!is_in(player_records, player))
                     player_records.push(player);
             });
