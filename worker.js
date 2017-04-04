@@ -202,7 +202,11 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         await ch.ack(msgs.pop(), true);  // ack all messages until the last
 
         // notify web
-        await Promise.all(players.map(async (p) => await ch.publish("amq.topic", "player." + p.name,
-            new Buffer("stats_update")) ));
+        await Promise.all([
+            Promise.all(players.map(async (p) => await ch.publish("amq.topic", "player." + p.name,
+                new Buffer("stats_update")) )),
+            Promise.all(participant_ext_records.map(async (p) => await ch.publish("amq.topic",
+                "participant." + p.api_id, new Buffer("stats_update")) ))
+        ]);
     }
 })();
