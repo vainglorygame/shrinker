@@ -64,8 +64,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
         // processor sends to queue with a custom "type" so compiler can filter
         // m.content: player.api_id
-        let players      = msgs.filter((m) => m.properties.type == "player").map((m) => JSON.parse(m.content)),
-            participants = msgs.filter((m) => m.properties.type == "participant").map((m) => JSON.parse(m.content));
+        let players      = msgs.filter((m) => m.properties.type == "player").map(
+            (m) => JSON.parse(m.content)).filter((p) => p != undefined),
+            participants = msgs.filter((m) => m.properties.type == "participant").map(
+            (m) => JSON.parse(m.content)).filter((p) => p != undefined);
 
         // collect information and populate _record arrays
         await Promise.all([
