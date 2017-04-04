@@ -5,7 +5,8 @@
 var amqp = require("amqplib"),
     Seq = require("sequelize"),
     snakeCaseKeys = require("snakecase-keys"),
-    item_name_map = require("../orm/items");
+    item_name_map = require("../orm/items"),
+    sleep = require("sleep-promise");
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     DATABASE_URI = process.env.DATABASE_URI || "sqlite:///db.sqlite",
@@ -13,10 +14,23 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     IDLE_TIMEOUT = process.env.PROCESSOR_IDLETIMEOUT || 500;  // ms
 
 (async () => {
-    let seq = new Seq(DATABASE_URI, { logging: () => {} }),
-        model = require("../orm/model")(seq, Seq),
-        rabbit = await amqp.connect(RABBITMQ_URI),
-        ch = await rabbit.createChannel();
+    let seq, model, rabbit, ch;
+
+    while (true) {
+        try {
+            seq = new Seq(DATABASE_URI, { logging: () => {} }),
+            rabbit = await amqp.connect(RABBITMQ_URI),
+            ch = await rabbit.createChannel();
+            await ch.assertQueue("process", {durable: true});
+            await ch.assertQueue("compile", {durable: true});
+            break;
+        } catch (err) {
+            console.error(err);
+            await sleep(5000);
+        }
+    }
+
+    model = require("../orm/model")(seq, Seq);
 
     let queue = [],
         timer = undefined;
@@ -32,8 +46,6 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     await model.Item.findAll()
         .map((item) => item_db_map[item.name] = item.id);
 
-    await ch.assertQueue("process", {durable: true});
-    await ch.assertQueue("compile", {durable: true});
     // as long as the queue is filled, msg are not ACKed
     // server sends as long as there are less than `prefetch` unACKed
     await ch.prefetch(BATCHSIZE);

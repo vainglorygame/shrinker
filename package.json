@@ -7,6 +7,7 @@
     "amqplib": "^0.5.1",
     "mysql": "^2.13.0",
     "sequelize": "^3.30.4",
+    "sleep-promise": "^2.0.0",
     "snakecase-keys": "^1.1.0"
   },
   "devDependencies": {},
