@@ -217,7 +217,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             Promise.all(players.map(async (p) => await ch.publish("amq.topic", "player." + p.name,
                 new Buffer("stats_update")) )),
             Promise.all(participant_ext_records.map(async (p) => await ch.publish("amq.topic",
-                "participant." + p.api_id, new Buffer("stats_update")) ))
+                "participant." + p.participant_api_id, new Buffer("stats_update")) ))
         ]);
     }
 })();
