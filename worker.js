@@ -20,6 +20,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             rabbit = await amqp.connect(RABBITMQ_URI),
             ch = await rabbit.createChannel();
             await ch.assertQueue("compile", {durable: true});
+            await ch.assertQueue("analyze", {durable: true});
             break;
         } catch (err) {
             console.error(err);
@@ -211,6 +212,14 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         }
         console.log("acking batch");
         await ch.ack(msgs.pop(), true);  // ack all messages until the last
+
+        // notify analyzer
+        Promise.all(participant_ext_records.map(async (p) =>
+            await ch.sendToQueue("analyze", new Buffer(p.participant_api_id), {
+                persistent: true,
+                type: "participant"
+            })
+        ));
 
         // notify web
         await Promise.all([
