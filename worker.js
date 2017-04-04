@@ -209,11 +209,11 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         } catch (err) {
             // this should only happen for deadlocks or non-data related issues
             console.error(err);
-            await ch.nack(msgs.pop(), true, true);  // nack all messages until the last and requeue
+            await Promise.all(msgs.map((m) => ch.nack(m, true)) );  // requeue
             return;  // give up
         }
         console.log("acking batch");
-        await ch.ack(msgs.pop(), true);  // ack all messages until the last
+        await Promise.all(msgs.map((m) => ch.ack(m)) );
 
         // notify analyzer
         Promise.all(participant_ext_records.map(async (p) =>
