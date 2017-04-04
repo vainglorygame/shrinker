@@ -86,7 +86,9 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         }
 
         // helper: true if object is not in record arr
-        let is_in = (arr, obj) => arr.map((o) => o.api_id).indexOf(obj.api_id) > -1;
+        // also, sort out invalid objects (undefined or null)
+        let is_in = (arr, obj) => obj == undefined ||
+            arr.map((o) => o.api_id).indexOf(obj.api_id) > -1;
 
 
         // we aggregate record objects to do a bulk insert
