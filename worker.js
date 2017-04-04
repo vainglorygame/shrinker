@@ -101,7 +101,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         // data from `/player`
         msgs.filter((m) => m.properties.type == "player").map((msg) => {
             let players = JSON.parse(msg.content);
-            players.map(async (p) => {
+            players.map((p) => {
                 let player = flatten(p);
                 console.log("processing player", player.name);
                 if (!is_in(player_records, player))
