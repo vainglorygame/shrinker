@@ -8,8 +8,8 @@ var amqp = require("amqplib"),
     item_name_map = require("../orm/items"),
     sleep = require("sleep-promise");
 
-var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
-    DATABASE_URI = process.env.DATABASE_URI || "sqlite:///db.sqlite",
+var RABBITMQ_URI = process.env.RABBITMQ_URI,
+    DATABASE_URI = process.env.DATABASE_URI,
     BATCHSIZE = process.env.PROCESSOR_BATCH || 50 * (6 + 5),  // objects
     IDLE_TIMEOUT = process.env.PROCESSOR_IDLETIMEOUT || 500;  // ms
 
@@ -18,8 +18,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
     while (true) {
         try {
-            seq = new Seq(DATABASE_URI, { logging: () => {} }),
-            rabbit = await amqp.connect(RABBITMQ_URI),
+            seq = new Seq(DATABASE_URI, { logging: () => {} });
+            rabbit = await amqp.connect(RABBITMQ_URI);
             ch = await rabbit.createChannel();
             await ch.assertQueue("process", {durable: true});
             await ch.assertQueue("compile", {durable: true});
@@ -231,7 +231,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                         updateOnDuplicate: [],  // all
                         transaction: transaction
                     }),
-                    model.ParticipantItemUse.bulkCreate(participant_item_records, {
+                    model.ItemParticipant.bulkCreate(participant_item_records, {
                         include: [ model.Participant ],
                         updateOnDuplicate: [],  // all
                         transaction: transaction
