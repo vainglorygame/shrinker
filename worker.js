@@ -163,7 +163,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
         participant_stats.kills = participant.get("kills");
 
-        participant_stats.kill_participation = participant.get("kills") / participant.roster.get("hero_kills");
+        if (participant.roster.get("hero_kills") == 0) participant_stats.kill_participation = 0;
+        else participant_stats.kill_participation = participant.get("kills") / participant.roster.get("hero_kills");
 
         return participant_stats;
     }
