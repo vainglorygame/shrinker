@@ -105,11 +105,16 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                     await model.Participant.findOne({
                         where: { api_id: api_participant.api_id },
                         include: [ {
-                            model: model.Roster,
-                            include: [
-                                model.Match
-                            ]
-                        } ]
+                                model: model.Roster,
+                                include: [
+                                    model.Match
+                                ]
+                            }, {
+                                model: model.ItemParticipant,
+                                as: "items",
+                                include: [ model.Item ]
+                            }
+                        ]
                     })
                 ))
             }))
@@ -165,6 +170,14 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
 
         if (participant.roster.get("hero_kills") == 0) participant_stats.kill_participation = 0;
         else participant_stats.kill_participation = participant.get("kills") / participant.roster.get("hero_kills");
+
+        participant_stats.sustain_score = participant.items.reduce((score, item) => {
+            if (item.get("action") == "final") {
+                if (["Eve of Harvest", "Serpent Mask"].indexOf(item.item.get("name")) != -1)
+                    return score + 20;
+            }
+            return score;
+        }, 0);
 
         return participant_stats;
     }
