@@ -8,7 +8,7 @@ var amqp = require("amqplib"),
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     DATABASE_URI = process.env.DATABASE_URI || "sqlite:///db.sqlite",
-    BATCHSIZE = process.env.PROCESSOR_BATCH || 50 * (1 + 5),  // matches + players + teams
+    BATCHSIZE = process.env.PROCESSOR_BATCH || 50 * (1 + 5),  // matches + players
     IDLE_TIMEOUT = process.env.PROCESSOR_IDLETIMEOUT || 500;  // ms
 
 (async () => {
@@ -58,8 +58,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         timer = undefined;
 
         // aggregate & bulk insert
-        let player_ext_records = [],
-            participant_ext_records = [],
+        let participant_stats_records = [],
             player_updates = [];  // [[what, where]]
 
         // processor sends to queue with a custom "type" so compiler can filter
@@ -73,8 +72,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         await Promise.all([
             // collect player information
             Promise.all(players.map(async (player) => {
-                let player_api_id = player.api_id,
-                    player_ext = {};
+                let player_api_id = player.api_id;
 
                 // set last_match_created_date
                 let record = await model.Participant.findOne({
@@ -100,92 +98,20 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
                         { last_match_created_date: record.get("last_match_created_date") },
                         { where: { api_id: player_api_id } }
                     ]);
-
-                // calculate "extended" player_ext fields like wins per patch
-                player_ext.player_api_id = player_api_id;
-                //player_ext.series = ""
-
-                // TODO parallelize
-
-                // TODO maybe this can be done in fewer/combined/subqueries
-                let count_matches_where = async (where) => {
-                    let record = await model.Participant.findOne({
-                        where: where,
-                        attributes: [[seq.fn("COUNT", "$roster.match$"), "count"]],
-                        include: [ {
-                            model: model.Roster,
-                            attributes: [],
-                            include: [ {
-                                model: model.Match,
-                                attributes: []
-                            } ]
-                        } ]
-                    })
-                    if (record == null) return 0;
-                    return record.get("count");
-                };
-
-                // TODO run in parallel
-                player_ext.played = await model.Participant.count({
-                    where: {
-                        player_api_id: player_api_id
-                    }
-                });
-                player_ext.wins = await model.Participant.count({
-                    where: {
-                        player_api_id: player_api_id,
-                        winner: true
-                    }
-                });
-
-                player_ext.played_casual = await count_matches_where({
-                    player_api_id: player_api_id,
-                    "$roster.match.game_mode$": "casual"
-                });
-                player_ext.played_ranked = await count_matches_where({
-                    player_api_id: player_api_id,
-                    "$roster.match.game_mode$": "ranked"
-                });
-                player_ext.wins_casual = await count_matches_where({
-                    player_api_id: player_api_id,
-                    winner: true,
-                    "$roster.match.game_mode$": "casual"
-                });
-                player_ext.wins_ranked = await count_matches_where({
-                    player_api_id: player_api_id,
-                    winner: true,
-                    "$roster.match.game_mode$": "ranked"
-                });
-
-                player_ext_records.push(player_ext);
             })),
             // calculate participant fields
             Promise.all(participants.map(async (api_participant) => {
-                let participant = await model.Participant.findOne({
-                    where: {
-                        api_id: api_participant.api_id
-                    },
-                    attributes: ["api_id", "kills", "assists", "deaths", seq.col("roster.hero_kills")],
-                    include: [
-                        model.Roster
-                    ]
-                }),
-                    participant_ext = {};
-
-                participant_ext.participant_api_id = participant.api_id;
-                participant_ext.series = ""  // TODO rm
-
-                if (participant.roster.hero_kills == 0)
-                    participant_ext.kills_participation = 0;
-                else
-                    participant_ext.kills_participation = (participant.kills + participant.assists) / participant.roster.hero_kills;
-
-                if (participant.deaths == 0)
-                    participant_ext.kda = 0;
-                else
-                    participant_ext.kda = (participant.kills + participant.assists) / participant.deaths;
-
-                participant_ext_records.push(participant_ext);
+                participant_stats_records.push(calculate_stats(
+                    await model.Participant.findOne({
+                        where: { api_id: api_participant.api_id },
+                        include: [ {
+                            model: model.Roster,
+                            include: [
+                                model.Match
+                            ]
+                        } ]
+                    })
+                ))
             }))
         ]);
 
@@ -194,11 +120,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
             console.log("inserting batch into db");
             await seq.transaction({ autocommit: false }, async (transaction) => {
                 await Promise.all([
-                    model.ParticipantExt.bulkCreate(participant_ext_records, {
-                        updateOnDuplicate: [],  // all
-                        transaction: transaction
-                    }),
-                    model.PlayerExt.bulkCreate(player_ext_records, {
+                    model.ParticipantStats.bulkCreate(participant_stats_records, {
                         updateOnDuplicate: [],  // all
                         transaction: transaction
                     }),
@@ -216,7 +138,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         await Promise.all(msgs.map((m) => ch.ack(m)) );
 
         // notify analyzer
-        Promise.all(participant_ext_records.map(async (p) =>
+        Promise.all(participant_stats_records.map(async (p) =>
             await ch.sendToQueue("analyze", new Buffer(p.participant_api_id), {
                 persistent: true,
                 type: "participant"
@@ -227,8 +149,22 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
         await Promise.all([
             Promise.all(players.map(async (p) => await ch.publish("amq.topic", "player." + p.name,
                 new Buffer("stats_update")) )),
-            Promise.all(participant_ext_records.map(async (p) => await ch.publish("amq.topic",
+            Promise.all(participant_stats_records.map(async (p) => await ch.publish("amq.topic",
                 "participant." + p.participant_api_id, new Buffer("stats_update")) ))
         ]);
+    }
+
+    // based on the participant db record from the end of the match,
+    // calculate a participant_stats record and return it
+    function calculate_stats(participant) {
+        if (participant == null) { console.error("got nonexisting participant!"); return; }
+        let participant_stats = {};
+        participant_stats.participant_api_id = participant.get("api_id");
+
+        participant_stats.kills = participant.get("kills");
+
+        participant_stats.kill_participation = participant.get("kills") / participant.roster.get("hero_kills");
+
+        return participant_stats;
     }
 })();
