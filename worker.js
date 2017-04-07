@@ -55,7 +55,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
 
         // fill queue until batchsize or idle
         if (timer === undefined)
-            timer = setTimeout(process, IDLE_TIMEOUT)
+            timer = setTimeout(process, IDLE_TIMEOUT);
         if (queue.length == BATCHSIZE)
             await process();
     }, { noAck: false });
@@ -64,10 +64,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         console.log("processing batch", queue.length);
 
         // clean up to allow processor to accept while we wait for db
-        let msgs = queue.slice();
-        queue = [];
         clearTimeout(timer);
         timer = undefined;
+        let msgs = queue;
+        queue = [];
 
         // helper to convert API response into flat JSON
         // db structure is (almost) 1:1 the API structure
@@ -212,8 +212,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         try {
             console.log("inserting batch into db");
             // upsert whole batch in parallel
-            await seq.transaction({ autocommit: false }, (transaction) => {
-                return Promise.all([
+            await seq.transaction({ autocommit: false }, async (transaction) => {
+                await Promise.all([
                     model.Match.bulkCreate(match_records, {
                         include: [ model.Roster, model.Asset ],
                         updateOnDuplicate: [],  // all
