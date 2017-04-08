@@ -138,6 +138,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                 roster.matchApiId = match.id;
                 roster.attributes.shardId = match.attributes.shardId;
                 roster.createdAt = match.createdAt;
+                // TODO API workaround: roster does not have `winner`
+                roster.attributes.stats.winner = roster.participants[0].stats.winner;
 
                 roster.participants = roster.participants.map((participant) => {
                     participant.attributes.shardId = roster.attributes.shardId;
