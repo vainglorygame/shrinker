@@ -46,7 +46,6 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
     await seq.query("SET FOREIGN_KEY_CHECKS=0");
     await seq.sync({force: true});
     */
-    await seq.sync();
     // TODO instead of object, use Map
     await Promise.all([
         model.Item.findAll()
