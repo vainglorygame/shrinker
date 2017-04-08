@@ -138,7 +138,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                 roster.attributes.shardId = match.attributes.shardId;
                 roster.createdAt = match.createdAt;
                 // TODO API workaround: roster does not have `winner`
-                roster.attributes.stats.winner = roster.participants[0].stats.winner;
+                if (roster.participants.length > 0)
+                    roster.attributes.stats.winner = roster.participants[0].stats.winner;
+                else  // Blitz 2v0, see 095e86e4-1bd3-11e7-b0b1-0297c91b7699 on eu
+                    roster.attributes.stats.winner = false;
 
                 roster.participants = roster.participants.map((participant) => {
                     participant.attributes.shardId = roster.attributes.shardId;
