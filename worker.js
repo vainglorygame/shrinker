@@ -272,21 +272,27 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                     })
                 ]);
 
-                // update last_match_created_date for players
+                // update last_match_created_date and skill tier for players
                 await Promise.all(player_records.map(async (player) => {
                     // set last_match_created_date
                     console.log("updating player", player.name);
                     let record = await model.Participant.findOne({
                         transaction: transaction,
                         where: { player_api_id: player.api_id },
-                        attributes: [ [seq.col("created_at"), "last_match_created_date"] ],
+                        attributes: [
+                            [seq.col("created_at"), "last_match_created_date"],
+                            "skill_tier"
+                        ],
                         order: [ [seq.col("created_at"), "DESC"] ]
                     });
                     if (record != null) {
                         await model.Player.update(
-                            { last_match_created_date: record.get("last_match_created_date") }, {
+                            {
+                                last_match_created_date: record.get("last_match_created_date"),
+                                skill_tier: record.get("skill_tier")
+                            }, {
                                 where: { api_id: player.api_id },
-                                fields: [ "last_match_created_date" ],
+                                fields: [ "last_match_created_date", "skill_tier" ],
                                 transaction: transaction
                             }
                         );
