@@ -340,7 +340,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         // (Sayoc = Taka)
         p.hero_id = hero_db_map[hero_name_map[participant.actor]];
         // TODO don't hardcode this, waiting for `match.patch_version` to be available
-        p.series_id = series_db_map["Patch 2.3"];
+        if (p_s.created_at < new Date(2017, 3, 28))
+            p.series_id = series_db_map["Patch 2.2"];
+        else
+            p.series_id = series_db_map["Patch 2.3"];
         p.game_mode_id = game_mode_db_map[match.game_mode];
         p.role_id = series_db_map["all"];  // TODO identify roles
 
