@@ -11,8 +11,8 @@ var amqp = require("amqplib"),
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
-    BATCHSIZE = parseInt(process.env.PROCESSOR_BATCH) || 50 * (1 + 5),  // matches + players
-    IDLE_TIMEOUT = parseFloat(process.env.PROCESSOR_IDLETIMEOUT) || 500;  // ms
+    BATCHSIZE = parseInt(process.env.BATCHSIZE) || 2 * 50 * (1 + 5),  // matches + players
+    IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 1000;  // ms
 
 (async () => {
     let seq, model, rabbit, ch;
@@ -64,14 +64,14 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
     // server sends as long as there are less than `prefetch` unACKed
     await ch.prefetch(BATCHSIZE);
 
-    ch.consume("process", async (msg) => {
+    ch.consume("process", (msg) => {
         queue.push(msg);
 
         // fill queue until batchsize or idle
-        if (timer === undefined)
-            timer = setTimeout(process, IDLE_TIMEOUT);
+        if (timer != undefined) clearTimeout(timer);
+        timer = setTimeout(process, IDLE_TIMEOUT);
         if (queue.length == BATCHSIZE)
-            await process();
+            process();
     }, { noAck: false });
 
     async function process() {
@@ -233,9 +233,9 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
 
         // now access db
         try {
-            console.log("inserting batch into db");
             // upsert whole batch in parallel
             await seq.transaction({ autocommit: false }, async (transaction) => {
+                console.log("inserting batch into db");
                 await Promise.all([
                     model.Match.bulkCreate(match_records, {
                         include: [ model.Roster, model.Asset ],
