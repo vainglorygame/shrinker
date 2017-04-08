@@ -10,8 +10,8 @@ var amqp = require("amqplib"),
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
-    BATCHSIZE = process.env.PROCESSOR_BATCH || 50 * (6 + 5),  // objects
-    IDLE_TIMEOUT = process.env.PROCESSOR_IDLETIMEOUT || 500;  // ms
+    BATCHSIZE = parseInt(process.env.PROCESSOR_BATCH) || 50 * (1 + 5),  // matches + players
+    IDLE_TIMEOUT = parseFloat(process.env.PROCESSOR_IDLETIMEOUT) || 500;  // ms
 
 (async () => {
     let seq, model, rabbit, ch;
@@ -22,7 +22,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
             rabbit = await amqp.connect(RABBITMQ_URI);
             ch = await rabbit.createChannel();
             await ch.assertQueue("process", {durable: true});
-            await ch.assertQueue("compile", {durable: true});
+            await ch.assertQueue("analyze", {durable: true});
             break;
         } catch (err) {
             console.error(err);
@@ -35,7 +35,11 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
     let queue = [],
         timer = undefined;
 
-    let item_db_map = {};  // "Halcyon Potion" to id
+    let item_db_map = {},      // "Halcyon Potion" to id
+        hero_db_map = {},      // "*SAW*" to id
+        series_db_map = {},    // date to series id
+        game_mode_db_map = {}, // "ranked" to id
+        role_db_map = {};      // "captain" to id
 
     /* recreate for debugging
     await seq.query("SET FOREIGN_KEY_CHECKS=0");
@@ -43,8 +47,18 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
     */
     await seq.sync();
     // TODO instead of object, use Map
-    await model.Item.findAll()
-        .map((item) => item_db_map[item.name] = item.id);
+    await Promise.all([
+        model.Item.findAll()
+            .map((item) => item_db_map[item.name] = item.id),
+        model.Hero.findAll()
+            .map((hero) => hero_db_map[hero.name] = hero.id),
+        model.Series.findAll()
+            .map((series) => series_db_map[series.name] = series.id),
+        model.GameMode.findAll()
+            .map((mode) => game_mode_db_map[mode.name] = mode.id),
+        model.Role.findAll()
+            .map((role) => role_db_map[role.name] = role.id)
+    ]);
 
     // as long as the queue is filled, msg are not ACKed
     // server sends as long as there are less than `prefetch` unACKed
@@ -95,6 +109,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         let match_records = [],
             roster_records = [],
             participant_records = [],
+            participant_stats_records = [],
             player_records = [],
             asset_records = [],
             participant_item_records = [];
@@ -169,7 +184,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                     if (items_missing_db.length > 0) console.error("missing name -> DB ID mapping for", items_missing_db);
 
                     // redefine participant.items for our custom map
-                    participant.attributes.stats.items = itms;
+                    participant.attributes.stats.participant_items = itms;
 
                     participant.player.attributes.shardId = participant.attributes.shardId;
                     participant.player = flatten(participant.player);
@@ -192,12 +207,15 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                 match.rosters.map((r) => {
                     roster_records.push(r);
                     r.participants.map((p) => {
-                        participant_records.push(p);
+                        let p_pstats = calculate_participant_stats(match, r, p);
+                        // participant gets split into participant and p_stats
+                        participant_records.push(p_pstats[0]);
+                        participant_stats_records.push(p_pstats[1]);
                         // deduplicate player
                         // in a batch, it is very likely that players are duplicated
                         // so this improves performance a bit
                         if (!is_in(player_records, p.player)) player_records.push(p.player);
-                        p.items.map((i) => {
+                        p.participant_items.map((i) => {
                             participant_item_records.push(i);
                         });
                     });
@@ -221,29 +239,35 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                     }),
                     model.Roster.bulkCreate(roster_records, {
                         include: [ model.Roster ],
-                        updateOnDuplicate: [],  // all
+                        updateOnDuplicate: [],
                         transaction: transaction
                     }),
                     model.Participant.bulkCreate(participant_records, {
                         include: [ model.Player ],
-                        updateOnDuplicate: [],  // all
+                        updateOnDuplicate: [],
+                        transaction: transaction
+                    }),
+                    model.ParticipantStats.bulkCreate(participant_stats_records, {
+                        include: [ model.Participant ],
+                        updateOnDuplicate: [],
                         transaction: transaction
                     }),
                     model.Player.bulkCreate(player_records, {
-                        updateOnDuplicate: [],  // all
+                        updateOnDuplicate: [],
                         transaction: transaction
                     }),
                     model.ItemParticipant.bulkCreate(participant_item_records, {
                         include: [ model.Participant ],
-                        updateOnDuplicate: [],  // all
+                        updateOnDuplicate: [],
                         transaction: transaction
                     }),
                     model.Asset.bulkCreate(asset_records, {
-                        updateOnDuplicate: [],  // all
+                        updateOnDuplicate: [],
                         transaction: transaction
                     })
                 ]);
             });
+            await Promise.all(msgs.map((m) => ch.ack(m)) );
         } catch (err) {
             // this should only happen for Deadlocks in prod
             // it *must not* fail due to broken schema or missing dependency
@@ -253,30 +277,109 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
             await Promise.all(msgs.map((m) => ch.nack(m, true)) );  // requeue
             return;  // give up
         }
-
-        console.log("acking batch");
-        await Promise.all(msgs.map((m) => ch.ack(m)) );
-
-        // notify compiler
+    /*
+        // collect information and populate _record arrays
         await Promise.all([
-            Promise.all(participant_records.map(async (p) =>
-                await ch.sendToQueue("compile", new Buffer(JSON.stringify(p)), {
-                    persistent: true,
-                    type: "participant"
-                })
-            )),
-            Promise.all(player_records.map(async (p) =>
-                await ch.sendToQueue("compile", new Buffer(JSON.stringify(p)), {
-                    persistent: true,
-                    type: "player"
-                })
-            ))
+            // collect player information
+            Promise.all(players.map(async (player) => {
+                let player_api_id = player.api_id;
+
+                // set last_match_created_date
+                let record = await model.Participant.findOne({
+                    where: {
+                        player_api_id: player_api_id
+                    },
+                    attributes: [ [seq.col("roster.match.created_at"), "last_match_created_date"] ],
+                    include: [ {
+                        model: model.Roster,
+                        attributes: [],
+                        include: [ {
+                            model: model.Match,
+                            attributes: []
+                        } ]
+                    } ],
+                    order: [
+                        [seq.col("last_match_created_date"), "DESC"]
+                    ]
+                });
+                if (record != null)
+                    // do later in the transaction
+                    player_updates.push([
+                        { last_match_created_date: record.get("last_match_created_date") },
+                        { where: { api_id: player_api_id } }
+                    ]);
+            })),
         ]);
+
+        // load records into db
+        try {
+            console.log("inserting batch into db");
+            await seq.transaction({ autocommit: false }, async (transaction) => {
+                await Promise.all([
+                    player_updates.map(async (pu) =>
+                        await model.Player.update(pu[0], pu[1]))
+                ]);
+            });
+    */
 
         // notify web
         await Promise.all(player_records.map(async (p) =>
             await ch.publish("amq.topic", "player." + p.name, new Buffer("matches_update")) ));
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
+
+        // notify analyzer
+        Promise.all(participant_stats_records.map(async (p) =>
+            await ch.sendToQueue("analyze", new Buffer(p.participant_api_id), {
+                persistent: true,
+                type: "participant"
+            })
+        ));
+    }
+
+    // Split participant API data into participant and participant_stats
+    // Should not need to query db here.
+    function calculate_participant_stats(match, roster, participant) {
+        let p_s = {},  // participant_stats_record
+            p = {};  // participant_record
+
+        // meta
+        p_s.participant_api_id = participant.api_id;
+        p_s.final = true;  // these are the stats at the end of the match
+        p_s.updated_at = new Date();
+        p_s.created_at = new Date();  // TODO set to match.created_at+match.duration
+
+        // attributes to copy from API to participant
+        // these don't change over the duration of the match
+        // (or aren't in Telemetry)
+        ["api_id", "shard_id", "player_api_id", "roster_api_id",
+            "winner", "went_afk", "first_afk_time",
+            "skin_key", "skill_tier", "level",
+            "karma_level", "actor",
+            "farm"].map((attr) =>
+                p[attr] = participant[attr]);
+
+        // attributes to copy from API to participant_stats
+        // with Telemetry, these will be calculated in intervals
+        ["kills", "deaths", "assists", "minion_kills",
+            "jungle_kills", "non_jungle_minion_kills",
+            "crystal_mine_captures", "gold_mine_captures",
+            "kraken_captures", "turret_captures",
+            "gold"].map((attr) =>
+                p_s[attr] = participant[attr]);
+
+        // traits calculations
+        if (roster.hero_kills == 0) p_s.kill_participation = 0;
+        else p_s.kill_participation = p_s.kills / roster.hero_kills;
+
+        p_s.sustain_score = participant.items.reduce((score, item) => {
+            // items[], itemGrants{}, itemUse{}, itemSells{} are the API objects
+            // old item names to clean names need to be mapped via `item_name_map[oldname]`
+            if (["Eve of Harvest", "Serpent Mask"].indexOf(item_name_map[item]) != -1)
+                return score + 20;
+            return score;
+        }, 0);
+
+        return [p, p_s];
     }
 })();
