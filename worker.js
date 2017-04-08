@@ -6,6 +6,7 @@ var amqp = require("amqplib"),
     Seq = require("sequelize"),
     snakeCaseKeys = require("snakecase-keys"),
     item_name_map = require("../orm/items"),
+    hero_name_map = require("../orm/heroes"),
     sleep = require("sleep-promise");
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI,
@@ -144,7 +145,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                     participant.createdAt = roster.createdAt;
                     participant.playerApiId = participant.player.id;
 
-                    // API bug fixes
+                    // API bug fixes (TODO)
                     // items on AFK is `null` not `{}`
                     participant.attributes.stats.itemGrants = participant.attributes.stats.itemGrants || {};
                     participant.attributes.stats.itemSells = participant.attributes.stats.itemSells || {};
@@ -348,6 +349,15 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         p_s.final = true;  // these are the stats at the end of the match
         p_s.updated_at = new Date();
         p_s.created_at = new Date();  // TODO set to match.created_at+match.duration
+        p.participant_items = participant.participant_items;
+        // mappings
+        // hero names additionally need to be mapped old to new names
+        // (Sayoc = Taka)
+        p.hero_id = hero_db_map[hero_name_map[participant.actor]];
+        // TODO don't hardcode this, waiting for `match.patch_version` to be available
+        p.series_id = series_db_map["Patch 2.3"];
+        p.game_mode_id = game_mode_db_map[match.game_mode];
+        p.role_id = series_db_map["all"];  // TODO identify roles
 
         // attributes to copy from API to participant
         // these don't change over the duration of the match
