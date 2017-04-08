@@ -268,7 +268,30 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                         transaction: transaction
                     })
                 ]);
+
+                // update last_match_created_date for players
+                await Promise.all(player_records.map(async (player) => {
+                    // set last_match_created_date
+                    console.log("updating player", player.name);
+                    let record = await model.Participant.findOne({
+                        transaction: transaction,
+                        where: { player_api_id: player.api_id },
+                        attributes: [ [seq.col("created_at"), "last_match_created_date"] ],
+                        order: [ [seq.col("created_at"), "DESC"] ]
+                    });
+                    if (record != null) {
+                        await model.Player.update(
+                            { last_match_created_date: record.get("last_match_created_date") }, {
+                                where: { api_id: player.api_id },
+                                fields: [ "last_match_created_date" ],
+                                transaction: transaction
+                            }
+                        );
+                    }
+                }));
             });
+
+            console.log("acking batch");
             await Promise.all(msgs.map((m) => ch.ack(m)) );
         } catch (err) {
             // this should only happen for Deadlocks in prod
@@ -279,50 +302,6 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
             await Promise.all(msgs.map((m) => ch.nack(m, true)) );  // requeue
             return;  // give up
         }
-    /*
-        // collect information and populate _record arrays
-        await Promise.all([
-            // collect player information
-            Promise.all(players.map(async (player) => {
-                let player_api_id = player.api_id;
-
-                // set last_match_created_date
-                let record = await model.Participant.findOne({
-                    where: {
-                        player_api_id: player_api_id
-                    },
-                    attributes: [ [seq.col("roster.match.created_at"), "last_match_created_date"] ],
-                    include: [ {
-                        model: model.Roster,
-                        attributes: [],
-                        include: [ {
-                            model: model.Match,
-                            attributes: []
-                        } ]
-                    } ],
-                    order: [
-                        [seq.col("last_match_created_date"), "DESC"]
-                    ]
-                });
-                if (record != null)
-                    // do later in the transaction
-                    player_updates.push([
-                        { last_match_created_date: record.get("last_match_created_date") },
-                        { where: { api_id: player_api_id } }
-                    ]);
-            })),
-        ]);
-
-        // load records into db
-        try {
-            console.log("inserting batch into db");
-            await seq.transaction({ autocommit: false }, async (transaction) => {
-                await Promise.all([
-                    player_updates.map(async (pu) =>
-                        await model.Player.update(pu[0], pu[1]))
-                ]);
-            });
-    */
 
         // notify web
         await Promise.all(player_records.map(async (p) =>
@@ -349,8 +328,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         p_s.participant_api_id = participant.api_id;
         p_s.final = true;  // these are the stats at the end of the match
         p_s.updated_at = new Date();
-        p_s.created_at = new Date();  // TODO set to match.created_at+match.duration
+        p_s.created_at = new Date(Date.parse(match.created_at));
+        p_s.created_at.setMinutes(p_s.created_at.getMinutes() + match.duration / 60);
         p.participant_items = participant.participant_items;
+        p.created_at = match.created_at;
         // mappings
         // hero names additionally need to be mapped old to new names
         // (Sayoc = Taka)
