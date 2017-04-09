@@ -23,6 +23,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
             rabbit = await amqp.connect(RABBITMQ_URI);
             ch = await rabbit.createChannel();
             await ch.assertQueue("process", {durable: true});
+            await ch.assertQueue("crunch", {durable: true});
             await ch.assertQueue("analyze", {durable: true});
             break;
         } catch (err) {
@@ -318,11 +319,17 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
 
-        // notify analyzer
+        // notify analyzer & cruncher
         Promise.all(participant_stats_records.map(async (p) =>
             await ch.sendToQueue("analyze", new Buffer(p.participant_api_id), {
                 persistent: true,
                 type: "participant"
+            })
+        ));
+        Promise.all(player_records.map(async (p) =>
+            await ch.sendToQueue("crunch", new Buffer(p.api_id), {
+                persistent: true,
+                type: "player"
             })
         ));
     }
