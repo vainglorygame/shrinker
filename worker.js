@@ -121,6 +121,9 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
             let players = JSON.parse(msg.content);
             players.map((p) => {
                 let player = flatten(p);
+                // player objects that arrive here came from a search
+                // with search, updater can't update last_update
+                player.last_update = seq.fn("NOW");
                 console.log("processing player", player.name);
                 if (!is_in(player_records, player))
                     player_records.push(player);
@@ -259,7 +262,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                         transaction: transaction
                     }),
                     model.Player.bulkCreate(player_records, {
-                        updateOnDuplicate: [],
+                        updateOnDuplicate: [
+                            "shard_id", "api_id", "name",
+                            "level", "xp", "lifetime_gold"
+                        ],
                         transaction: transaction
                     }),
                     model.ItemParticipant.bulkCreate(participant_item_records, {
@@ -287,16 +293,14 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                         order: [ [seq.col("created_at"), "DESC"] ]
                     });
                     if (record != null) {
-                        await model.Player.update(
-                            {
-                                last_match_created_date: record.get("last_match_created_date"),
-                                skill_tier: record.get("skill_tier")
-                            }, {
-                                where: { api_id: player.api_id },
-                                fields: [ "last_match_created_date", "skill_tier" ],
-                                transaction: transaction
-                            }
-                        );
+                        await model.Player.update({
+                            last_match_created_date: record.get("last_match_created_date"),
+                            skill_tier: record.get("skill_tier")
+                        }, {
+                            where: { api_id: player.api_id },
+                            fields: [ "last_match_created_date", "skill_tier" ],
+                            transaction: transaction
+                        });
                     }
                 }));
             });
