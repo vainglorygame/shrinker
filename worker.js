@@ -150,6 +150,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                 roster.participants = roster.participants.map((participant) => {
                     participant.attributes.shardId = roster.attributes.shardId;
                     participant.rosterApiId = roster.id;
+                    participant.matchApiId = match.id;
                     participant.createdAt = roster.createdAt;
                     participant.playerApiId = participant.player.id;
 
