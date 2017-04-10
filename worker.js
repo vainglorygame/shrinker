@@ -251,7 +251,7 @@ function snakeCaseKeys(obj) {
                         // in a batch, it is very likely that players are duplicated
                         // so this improves performance a bit
                         if (processed_players.indexOf(p.player.api_id)) {
-                            player_records.push(p.player.api_id);
+                            processed_players.push(p.player.api_id);
                             player_records.push(p.player);
                         }
                         p.participant_items.forEach((i) => {
