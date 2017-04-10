@@ -11,7 +11,7 @@ var amqp = require("amqplib"),
 var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     // matches + players (2 pages for 100 players)
-    BATCHSIZE = parseInt(process.env.BATCHSIZE) || 10 * 2 * 50 * (1 + 5),
+    BATCHSIZE = parseInt(process.env.BATCHSIZE) || 4 * 50 * (1 + 5),
     IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 1000,  // ms
     PREMIUM_FEATURES = process.env.PREMIUM_FEATURES || false;  // calculate on demand for non-premium users
 
