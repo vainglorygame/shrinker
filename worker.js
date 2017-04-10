@@ -12,7 +12,10 @@ var amqp = require("amqplib"),
 var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 2 * 50 * (1 + 5),  // matches + players
-    IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 1000;  // ms
+    IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 1000,  // ms
+    PREMIUM_FEATURES = process.env.PREMIUM_FEATURES || false;  // calculate on demand for non-premium users
+
+console.log("features for premium users activated", PREMIUM_FEATURES);
 
 (async () => {
     let seq, model, rabbit, ch;
@@ -60,6 +63,10 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
         model.Role.findAll()
             .map((role) => role_db_map[role.name] = role.id)
     ]);
+
+    // TODO expire this cache after some time
+    let premium_users = (await model.Gamer.findAll()).map((gamer) =>
+        gamer.name);
 
     // as long as the queue is filled, msg are not ACKed
     // server sends as long as there are less than `prefetch` unACKed
@@ -331,12 +338,14 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
                 type: "participant"
             })
         ));
-        Promise.all(player_records.map(async (p) =>
-            await ch.sendToQueue("crunch", new Buffer(p.api_id), {
-                persistent: true,
-                type: "player"
-            })
-        ));
+        Promise.all(player_records.map(async (p) => {
+            if (PREMIUM_FEATURES == false || premium_users.indexOf(p.name) != -1) {
+                await ch.sendToQueue("crunch", new Buffer(p.api_id), {
+                    persistent: true,
+                    type: "player"
+                })
+            }
+        }));
     }
 
     // Split participant API data into participant and participant_stats
