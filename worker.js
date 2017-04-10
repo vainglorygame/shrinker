@@ -4,18 +4,35 @@
 
 var amqp = require("amqplib"),
     Seq = require("sequelize"),
-    snakeCaseKeys = require("snakecase-keys"),
     item_name_map = require("../orm/items"),
     hero_name_map = require("../orm/heroes"),
     sleep = require("sleep-promise");
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
-    BATCHSIZE = parseInt(process.env.BATCHSIZE) || 2 * 50 * (1 + 5),  // matches + players
+    // matches + players (2 pages for 100 players)
+    BATCHSIZE = parseInt(process.env.BATCHSIZE) || 10 * 2 * 50 * (1 + 5),
     IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 1000,  // ms
     PREMIUM_FEATURES = process.env.PREMIUM_FEATURES || false;  // calculate on demand for non-premium users
 
 console.log("features for premium users activated", PREMIUM_FEATURES);
+
+let camelCaseRegExp = new RegExp(/([a-z])([A-Z]+)/g);
+function camelToSnake(text) {
+    return text.replace(camelCaseRegExp, function(m, $1, $2) {
+        return $1 + "_" + $2.toLowerCase();
+    });
+}
+
+function snakeCaseKeys(obj) {
+    Object.keys(obj).forEach((key) => {
+        let new_key = camelToSnake(key);
+        if (new_key == key) return;
+        obj[new_key] = obj[key];
+        delete obj[key];
+    });
+    return obj;
+}
 
 (async () => {
     let seq, model, rabbit, ch;
@@ -40,11 +57,11 @@ console.log("features for premium users activated", PREMIUM_FEATURES);
     let queue = [],
         timer = undefined;
 
-    let item_db_map = {},      // "Halcyon Potion" to id
-        hero_db_map = {},      // "*SAW*" to id
-        series_db_map = {},    // date to series id
-        game_mode_db_map = {}, // "ranked" to id
-        role_db_map = {};      // "captain" to id
+    let item_db_map = new Map(),      // "Halcyon Potion" to id
+        hero_db_map = new Map(),      // "*SAW*" to id
+        series_db_map = new Map(),    // date to series id
+        game_mode_db_map = new Map(), // "ranked" to id
+        role_db_map = new Map();      // "captain" to id
 
     /* recreate for debugging
     await seq.query("SET FOREIGN_KEY_CHECKS=0");
@@ -104,14 +121,12 @@ console.log("features for premium users activated", PREMIUM_FEATURES);
             delete o.attributes;
             delete o.stats;
             delete o.relationships;
-            return o;
+            return snakeCaseKeys(o);
         }
 
-        // helper: true if object is not in record arr
-        // also, sort out invalid objects (undefined or null)
-        let is_in = (arr, obj) => obj == undefined ||
-            arr.map((o) => o.api_id).indexOf(obj.api_id) > -1;
-
+        // to sort out duplicates
+        let processed_players = [],
+            processed_matches = [];
 
         // we aggregate record objects to do a bulk insert
         let match_records = [],
@@ -124,26 +139,27 @@ console.log("features for premium users activated", PREMIUM_FEATURES);
 
         // populate `_records`
         // data from `/player`
-        msgs.filter((m) => m.properties.type == "player").map((msg) => {
+        msgs.filter((m) => m.properties.type == "player").forEach((msg) => {
             let players = JSON.parse(msg.content);
-            players.map((p) => {
+            players.forEach((p) => {
                 let player = flatten(p);
                 // player objects that arrive here came from a search
                 // with search, updater can't update last_update
                 player.last_update = seq.fn("NOW");
                 console.log("processing player", player.name);
-                if (!is_in(player_records, player))
+                if (processed_players.indexOf(player.api_id) == -1)
+                    processed_players.push(player.api_id);
                     player_records.push(player);
             });
         });
 
         // data from `/matches`
-        msgs.filter((m) => m.properties.type == "match").map((msg) => {
+        msgs.filter((m) => m.properties.type == "match").forEach((msg) => {
             let match = JSON.parse(msg.content);
             console.log("processing match", match.id);
 
             // flatten jsonapi nested response into our db structure-like shape
-            // also, push missing fields and snakecasify
+            // also, push missing fields
             match.rosters = match.rosters.map((roster) => {
                 roster.matchApiId = match.id;
                 roster.attributes.shardId = match.attributes.shardId;
@@ -188,6 +204,7 @@ console.log("features for premium users activated", PREMIUM_FEATURES);
                     itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemSells), "sell"));
 
                     // for debugging:
+                    /*
                     let items_missing_name = [].concat(...
                         Object.keys(participant.attributes.stats.itemGrants),
                         participant.attributes.stats.items)
@@ -199,6 +216,7 @@ console.log("features for premium users activated", PREMIUM_FEATURES);
                         participant.attributes.stats.items)
                         .filter((i) => Object.keys(item_db_map).indexOf(item_name_map[i]) == -1);
                     if (items_missing_db.length > 0) console.error("missing name -> DB ID mapping for", items_missing_db);
+                    */
 
                     // redefine participant.items for our custom map
                     participant.attributes.stats.participant_items = itms;
@@ -214,16 +232,17 @@ console.log("features for premium users activated", PREMIUM_FEATURES);
                 asset.attributes.shardId = match.attributes.shardId;
                 return flatten(asset);
             });
-            match = snakeCaseKeys(flatten(match));
+            match = flatten(match);
 
             // after conversion, create the array of records
             // there is a low chance of a match being duplicated in a batch,
             // skip it and its children
-            if (!is_in(match_records, match)) {
+            if (processed_matches.indexOf(match.api_id)) {
+                processed_matches.push(match.api_id);
                 match_records.push(match);
-                match.rosters.map((r) => {
+                match.rosters.forEach((r) => {
                     roster_records.push(r);
-                    r.participants.map((p) => {
+                    r.participants.forEach((p) => {
                         let p_pstats = calculate_participant_stats(match, r, p);
                         // participant gets split into participant and p_stats
                         participant_records.push(p_pstats[0]);
@@ -231,13 +250,16 @@ console.log("features for premium users activated", PREMIUM_FEATURES);
                         // deduplicate player
                         // in a batch, it is very likely that players are duplicated
                         // so this improves performance a bit
-                        if (!is_in(player_records, p.player)) player_records.push(p.player);
-                        p.participant_items.map((i) => {
+                        if (processed_players.indexOf(p.player.api_id)) {
+                            player_records.push(p.player.api_id);
+                            player_records.push(p.player);
+                        }
+                        p.participant_items.forEach((i) => {
                             participant_item_records.push(i);
                         });
                     });
                 });
-                match.assets.map((a) => {
+                match.assets.forEach((a) => {
                     asset_records.push(a);
                 });
             }
