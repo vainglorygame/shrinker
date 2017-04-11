@@ -135,27 +135,41 @@ function snakeCaseKeys(obj) {
             participant_stats_records = [],
             player_records = [],
             asset_records = [],
-            participant_item_records = [];
+            participant_item_records = [],
+            player_msgs = msgs.filter((m) => m.properties.type == "player"),
+            match_msgs = msgs.filter((m) => m.properties.type == "match"),
+            player_objects = [].concat(...player_msgs.map((msg) =>
+                JSON.parse(msg.content))),
+            match_objects = match_msgs.map((msg) => JSON.parse(msg.content));
 
         // populate `_records`
         // data from `/player`
-        msgs.filter((m) => m.properties.type == "player").forEach((msg) => {
-            let players = JSON.parse(msg.content);
-            players.forEach((p) => {
-                let player = flatten(p);
-                // player objects that arrive here came from a search
-                // with search, updater can't update last_update
-                player.last_update = seq.fn("NOW");
-                console.log("processing player", player.name);
-                if (processed_players.indexOf(player.api_id) == -1)
-                    processed_players.push(player.api_id);
-                    player_records.push(player);
-            });
+        player_objects.forEach((p) => {
+            let player = flatten(p);
+            // player objects that arrive here came from a search
+            // with search, updater can't update last_update
+            player.last_update = seq.fn("NOW");
+            console.log("processing player", player.name);
+            if (processed_players.indexOf(player.api_id) == -1)
+                processed_players.push(player.api_id);
+                player_records.push(player);
+        });
+
+        // reject duplicates
+        await Promise.all(match_objects.map(async (match, idx) => {
+            if (await model.Match.count({
+                where: { api_id: match.id }
+            }) > 0) delete match_objects[idx];
+        }));
+
+        // reject invalid matches (handling API bugs)
+        match_objects.forEach((match, idx) => {
+            if (match.rosters[0].id == "null")
+                delete match_objects[idx];
         });
 
         // data from `/matches`
-        msgs.filter((m) => m.properties.type == "match").forEach((msg) => {
-            let match = JSON.parse(msg.content);
+        match_objects.forEach((match) => {
             console.log("processing match", match.id);
 
             // flatten jsonapi nested response into our db structure-like shape
@@ -273,49 +287,49 @@ function snakeCaseKeys(obj) {
                 await Promise.all([
                     model.Match.bulkCreate(match_records, {
                         include: [ model.Roster, model.Asset ],
-                        updateOnDuplicate: [],  // all
+                        ignoreDuplicate: true,
                         transaction: transaction
                     }),
                     model.Roster.bulkCreate(roster_records, {
                         include: [ model.Roster ],
-                        updateOnDuplicate: [],
+                        ignoreDuplicate: true,
                         transaction: transaction
                     }),
                     model.Participant.bulkCreate(participant_records, {
                         include: [ model.Player ],
-                        updateOnDuplicate: [],
+                        ignoreDuplicate: true,
                         transaction: transaction
                     }),
                     model.ParticipantStats.bulkCreate(participant_stats_records, {
                         include: [ model.Participant ],
-                        updateOnDuplicate: [],
+                        ignoreDuplicate: true,
                         transaction: transaction
                     }),
                     model.Player.bulkCreate(player_records, {
                         updateOnDuplicate: [
-                            "shard_id", "api_id", "name",
-                            "level", "xp", "lifetime_gold"
+                            "shard_id", "api_id", "name"
                         ],
                         transaction: transaction
                     }),
                     model.ItemParticipant.bulkCreate(participant_item_records, {
                         include: [ model.Participant ],
-                        updateOnDuplicate: [],
+                        ignoreDuplicate: true,
                         transaction: transaction
                     }),
                     model.Asset.bulkCreate(asset_records, {
-                        updateOnDuplicate: [],
+                        ignoreDuplicate: true,
                         transaction: transaction
                     })
                 ]);
 
                 // update last_match_created_date and skill tier for players
-                await Promise.all(player_records.map(async (player) => {
+                // that were explicitely pushed into processor
+                await Promise.all(player_objects.map(async (player) => {
                     // set last_match_created_date
                     console.log("updating player", player.name);
                     let record = await model.Participant.findOne({
                         transaction: transaction,
-                        where: { player_api_id: player.api_id },
+                        where: { player_api_id: player.id },
                         attributes: [
                             [seq.col("created_at"), "last_match_created_date"],
                             "skill_tier"
@@ -327,7 +341,7 @@ function snakeCaseKeys(obj) {
                             last_match_created_date: record.get("last_match_created_date"),
                             skill_tier: record.get("skill_tier")
                         }, {
-                            where: { api_id: player.api_id },
+                            where: { api_id: player.id },
                             fields: [ "last_match_created_date", "skill_tier" ],
                             transaction: transaction
                         });
