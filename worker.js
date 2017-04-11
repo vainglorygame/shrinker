@@ -284,6 +284,7 @@ function snakeCaseKeys(obj) {
             // upsert whole batch in parallel
             await seq.transaction({ autocommit: false }, async (transaction) => {
                 console.log("inserting batch into db");
+                await seq.query("SET unique_checks=0");
                 await Promise.all([
                     model.Match.bulkCreate(match_records, {
                         include: [ model.Roster, model.Asset ],
@@ -321,6 +322,7 @@ function snakeCaseKeys(obj) {
                         transaction: transaction
                     })
                 ]);
+                await seq.query("SET unique_checks=1");
 
                 // update last_match_created_date and skill tier for players
                 // that were explicitely pushed into processor
