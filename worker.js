@@ -74,7 +74,10 @@ function snakeCaseKeys(obj) {
         model.Hero.findAll()
             .map((hero) => hero_db_map[hero.name] = hero.id),
         model.Series.findAll()
-            .map((series) => series_db_map[series.name] = series.id),
+            .map((series) => {
+                if (series.dimension_on == "player")
+                    series_db_map[series.name] = series.id;
+            }),
         model.GameMode.findAll()
             .map((mode) => game_mode_db_map[mode.name] = mode.id),
         model.Role.findAll()
