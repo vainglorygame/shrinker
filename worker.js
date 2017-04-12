@@ -61,7 +61,8 @@ function snakeCaseKeys(obj) {
         hero_db_map = new Map(),      // "*SAW*" to id
         series_db_map = new Map(),    // date to series id
         game_mode_db_map = new Map(), // "ranked" to id
-        role_db_map = new Map();      // "captain" to id
+        role_db_map = new Map(),      // "captain" to id
+        hero_role_map = new Map();    // SAW.id to "carry"
 
     /* recreate for debugging
     await seq.query("SET FOREIGN_KEY_CHECKS=0");
@@ -72,7 +73,15 @@ function snakeCaseKeys(obj) {
         model.Item.findAll()
             .map((item) => item_db_map[item.name] = item.id),
         model.Hero.findAll()
-            .map((hero) => hero_db_map[hero.name] = hero.id),
+            .map((hero) => {
+                hero_db_map[hero.name] = hero.id;
+                if (hero.is_carry)
+                    hero_role_map[hero.id] = "carry";
+                if (hero.is_jungler)
+                    hero_role_map[hero.id] = "jungler";
+                if (hero.is_captain)
+                    hero_role_map[hero.id] = "captain";
+            }),
         model.Series.findAll()
             .map((series) => {
                 if (series.dimension_on == "player")
@@ -413,7 +422,7 @@ function snakeCaseKeys(obj) {
         else
             p.series_id = series_db_map["Patch 2.3"];
         p.game_mode_id = game_mode_db_map[match.game_mode];
-        p.role_id = series_db_map["all"];  // TODO identify roles
+        p.role_id = role_db_map[classify_role(p)];
 
         // attributes to copy from API to participant
         // these don't change over the duration of the match
@@ -446,5 +455,10 @@ function snakeCaseKeys(obj) {
         }, 0);
 
         return [p, p_s];
+    }
+
+    // return "captain" "carry" "jungler"
+    function classify_role(participant) {
+        return hero_role_map[participant.hero_id];
     }
 })();
