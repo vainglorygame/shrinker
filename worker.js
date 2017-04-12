@@ -421,8 +421,7 @@ function snakeCaseKeys(obj) {
         ["api_id", "shard_id", "player_api_id", "roster_api_id",
             "winner", "went_afk", "first_afk_time",
             "skin_key", "skill_tier", "level",
-            "karma_level", "actor",
-            "farm"].map((attr) =>
+            "karma_level", "actor"].map((attr) =>
                 p[attr] = participant[attr]);
 
         // attributes to copy from API to participant_stats
@@ -431,12 +430,12 @@ function snakeCaseKeys(obj) {
             "jungle_kills", "non_jungle_minion_kills",
             "crystal_mine_captures", "gold_mine_captures",
             "kraken_captures", "turret_captures",
-            "gold"].map((attr) =>
+            "gold", "farm"].map((attr) =>
                 p_s[attr] = participant[attr]);
 
         // traits calculations
         if (roster.hero_kills == 0) p_s.kill_participation = 0;
-        else p_s.kill_participation = p_s.kills / roster.hero_kills;
+        else p_s.kill_participation = (p_s.kills + p_s.assists) / roster.hero_kills;
 
         p_s.sustain_score = participant.items.reduce((score, item) => {
             // items[], itemGrants{}, itemUse{}, itemSells{} are the API objects
