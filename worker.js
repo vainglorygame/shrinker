@@ -298,72 +298,75 @@ function snakeCaseKeys(obj) {
             // upsert whole batch in parallel
             await seq.query("SET unique_checks=0");
             console.log("inserting batch into db");
-            await seq.transaction({ autocommit: false }, (transaction) => {
-                return Promise.all([
-                    Promise.all([
-                        model.Match.bulkCreate(match_records, {
-                            include: [ model.Roster, model.Asset ],
-                            ignoreDuplicate: true,
-                            transaction: transaction
-                        }),
-                        model.Roster.bulkCreate(roster_records, {
-                            include: [ model.Roster ],
-                            ignoreDuplicate: true,
-                            transaction: transaction
-                        }),
-                        model.Participant.bulkCreate(participant_records, {
-                            include: [ model.Player ],
-                            ignoreDuplicate: true,
-                            transaction: transaction
-                        }),
-                        model.ParticipantStats.bulkCreate(participant_stats_records, {
-                            include: [ model.Participant ],
-                            ignoreDuplicate: true,
-                            transaction: transaction
-                        }),
-                        model.Player.bulkCreate(player_records, {
-                            updateOnDuplicate: [
-                                "shard_id", "api_id", "name"
-                            ],
-                            transaction: transaction
-                        }),
-                        model.ItemParticipant.bulkCreate(participant_item_records, {
-                            include: [ model.Participant ],
-                            ignoreDuplicate: true,
-                            transaction: transaction
-                        }),
-                        model.Asset.bulkCreate(asset_records, {
-                            ignoreDuplicate: true,
-                            transaction: transaction
-                        })
-                    ]),
+            await seq.transaction({ autocommit: false }, async (transaction) => {
+                await Promise.all([
+                    model.Match.bulkCreate(match_records, {
+                        include: [ model.Roster, model.Asset ],
+                        ignoreDuplicate: true,
+                        transaction: transaction
+                    }),
+                    model.Roster.bulkCreate(roster_records, {
+                        include: [ model.Roster ],
+                        ignoreDuplicate: true,
+                        transaction: transaction
+                    }),
+                    model.Participant.bulkCreate(participant_records, {
+                        include: [ model.Player ],
+                        ignoreDuplicate: true,
+                        transaction: transaction
+                    }),
+                    model.ParticipantStats.bulkCreate(participant_stats_records, {
+                        include: [ model.Participant ],
+                        ignoreDuplicate: true,
+                        transaction: transaction
+                    }),
+                    model.Player.bulkCreate(player_records, {
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }),
+                    model.ItemParticipant.bulkCreate(participant_item_records, {
+                        include: [ model.Participant ],
+                        ignoreDuplicate: true,
+                        transaction: transaction
+                    }),
+                    model.Asset.bulkCreate(asset_records, {
+                        ignoreDuplicate: true,
+                        transaction: transaction
+                    })
+                ])
 
-                    // update last_match_created_date and skill tier for players
-                    // that were explicitely pushed into processor
-                    Promise.all(player_objects.map(async (player) => {
-                        // set last_match_created_date
-                        console.log("updating player", player.attributes.name);
-                        let record = await model.Participant.findOne({
-                            transaction: transaction,
-                            where: { player_api_id: player.id },
-                            attributes: [
-                                [seq.col("created_at"), "last_match_created_date"],
-                                "skill_tier"
-                            ],
-                            order: [ [seq.col("created_at"), "DESC"] ]
+                // TODO refactor, make this easier to read
+                // TODO once MadGlory adds skill_tier to player, run this in bulk
+                // update last_match_created_date and skill tier for players
+                // that were explicitely pushed into processor
+                await Promise.all(player_records.map(async (player) => {
+                    // set last_match_created_date
+                    console.log("updating player", player.name);
+                    let record = await model.Participant.findOne({
+                        transaction: transaction,
+                        where: { player_api_id: player.api_id },
+                        attributes: [
+                            [seq.col("created_at"), "last_match_created_date"],
+                            "skill_tier"
+                        ],
+                        order: [ [seq.col("created_at"), "DESC"] ]
+                    });
+                    if (record != null) {
+                        player.last_match_created_date = record.get("last_match_created_date");
+                        player.skill_tier = record.get("skill_tier");
+                        await model.Player.upsert(player, {
+                            where: {
+                                // API returns from /player `createdAt`
+                                // in case of a region change, createdAt is newer
+                                // on the active account
+                                created_at: {
+                                    $lte: player.createdAt
+                                }
+                            },
+                            transaction: transaction
                         });
-                        if (record != null) {
-                            await model.Player.update({
-                                last_match_created_date: record.get("last_match_created_date"),
-                                skill_tier: record.get("skill_tier")
-                            }, {
-                                where: { api_id: player.id },
-                                fields: [ "last_match_created_date", "skill_tier" ],
-                                transaction: transaction
-                            });
-                        }
-                    }))
-                ]);
+                    }
+                }))
             });
             await seq.query("SET unique_checks=1");
 
