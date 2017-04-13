@@ -398,9 +398,9 @@ function snakeCaseKeys(obj) {
                 type: "participant"
             })
         ));
-        Promise.all(notify_players.map(async (player) => {
-            if (PREMIUM_FEATURES == false || premium_users.indexOf(player.api_id) != -1) {
-                await ch.sendToQueue("crunch", new Buffer(player.api_id), {
+        Promise.all(player_objects.map(async (api_player) => {
+            if (PREMIUM_FEATURES == false || premium_users.indexOf(api_player.id) != -1) {
+                await ch.sendToQueue("crunch", new Buffer(api_player.id), {
                     persistent: true,
                     type: "player"
                 })
