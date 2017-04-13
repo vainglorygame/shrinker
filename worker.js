@@ -137,8 +137,9 @@ function snakeCaseKeys(obj) {
         }
 
         // to sort out duplicates
-        let processed_players = [],
-            processed_matches = [];
+        // TODO refactor this
+        // TODO use `Set` where appropriate
+        let processed_players = [];
 
         // we aggregate record objects to do a bulk insert
         let match_records = [],
@@ -152,7 +153,19 @@ function snakeCaseKeys(obj) {
             match_msgs = msgs.filter((m) => m.properties.type == "match"),
             player_objects = [].concat(...player_msgs.map((msg) =>
                 JSON.parse(msg.content))),
-            match_objects = match_msgs.map((msg) => JSON.parse(msg.content));
+            match_objects = match_msgs.map((msg) => JSON.parse(msg.content)),
+            notify_players = [];  // players that have new matches
+
+        // reject duplicates
+        await Promise.all(match_objects.map(async (match, idx) => {
+            if (await model.Match.count({
+                where: { api_id: match.id }
+            }) > 0) delete match_objects[idx];
+        }));
+        match_objects = match_objects.filter((match, idx, self) =>
+            self.indexOf(match) === idx);
+        player_objects = player_objects.filter((player, idx, self) =>
+            self.indexOf(player) === idx);
 
         // populate `_records`
         // data from `/player`
@@ -162,17 +175,9 @@ function snakeCaseKeys(obj) {
             // with search, updater can't update last_update
             player.last_update = seq.fn("NOW");
             console.log("processing player", player.name);
-            if (processed_players.indexOf(player.api_id) == -1)
-                processed_players.push(player.api_id);
-                player_records.push(player);
+            processed_players.push(player.api_id);
+            player_records.push(player);
         });
-
-        // reject duplicates
-        await Promise.all(match_objects.map(async (match, idx) => {
-            if (await model.Match.count({
-                where: { api_id: match.id }
-            }) > 0) delete match_objects[idx];
-        }));
 
         // reject invalid matches (handling API bugs)
         match_objects.forEach((match, idx) => {
@@ -263,105 +268,105 @@ function snakeCaseKeys(obj) {
             // after conversion, create the array of records
             // there is a low chance of a match being duplicated in a batch,
             // skip it and its children
-            if (processed_matches.indexOf(match.api_id)) {
-                processed_matches.push(match.api_id);
-                match_records.push(match);
-                match.rosters.forEach((r) => {
-                    roster_records.push(r);
-                    r.participants.forEach((p) => {
-                        let p_pstats = calculate_participant_stats(match, r, p);
-                        // participant gets split into participant and p_stats
-                        participant_records.push(p_pstats[0]);
-                        participant_stats_records.push(p_pstats[1]);
-                        // deduplicate player
-                        // in a batch, it is very likely that players are duplicated
-                        // so this improves performance a bit
-                        if (processed_players.indexOf(p.player.api_id)) {
-                            processed_players.push(p.player.api_id);
-                            player_records.push(p.player);
-                        }
-                        p.participant_items.forEach((i) => {
-                            participant_item_records.push(i);
-                        });
+            match_records.push(match);
+            match.rosters.forEach((r) => {
+                roster_records.push(r);
+                r.participants.forEach((p) => {
+                    let p_pstats = calculate_participant_stats(match, r, p);
+                    // participant gets split into participant and p_stats
+                    participant_records.push(p_pstats[0]);
+                    participant_stats_records.push(p_pstats[1]);
+                    // deduplicate player
+                    // in a batch, it is very likely that players are duplicated
+                    // so this improves performance a bit
+                    if (processed_players.indexOf(p.player.api_id)) {
+                        processed_players.push(p.player.api_id);
+                        player_records.push(p.player);
+                        notify_players.push(p.player.api_id);
+                    }
+                    p.participant_items.forEach((i) => {
+                        participant_item_records.push(i);
                     });
                 });
-                match.assets.forEach((a) => {
-                    asset_records.push(a);
-                });
-            }
+            });
+            match.assets.forEach((a) => {
+                asset_records.push(a);
+            });
         });
 
         // now access db
         try {
             // upsert whole batch in parallel
-            await seq.transaction({ autocommit: false }, async (transaction) => {
-                console.log("inserting batch into db");
-                await seq.query("SET unique_checks=0");
-                await Promise.all([
-                    model.Match.bulkCreate(match_records, {
-                        include: [ model.Roster, model.Asset ],
-                        ignoreDuplicate: true,
-                        transaction: transaction
-                    }),
-                    model.Roster.bulkCreate(roster_records, {
-                        include: [ model.Roster ],
-                        ignoreDuplicate: true,
-                        transaction: transaction
-                    }),
-                    model.Participant.bulkCreate(participant_records, {
-                        include: [ model.Player ],
-                        ignoreDuplicate: true,
-                        transaction: transaction
-                    }),
-                    model.ParticipantStats.bulkCreate(participant_stats_records, {
-                        include: [ model.Participant ],
-                        ignoreDuplicate: true,
-                        transaction: transaction
-                    }),
-                    model.Player.bulkCreate(player_records, {
-                        updateOnDuplicate: [
-                            "shard_id", "api_id", "name"
-                        ],
-                        transaction: transaction
-                    }),
-                    model.ItemParticipant.bulkCreate(participant_item_records, {
-                        include: [ model.Participant ],
-                        ignoreDuplicate: true,
-                        transaction: transaction
-                    }),
-                    model.Asset.bulkCreate(asset_records, {
-                        ignoreDuplicate: true,
-                        transaction: transaction
-                    })
-                ]);
-                await seq.query("SET unique_checks=1");
-
-                // update last_match_created_date and skill tier for players
-                // that were explicitely pushed into processor
-                await Promise.all(player_objects.map(async (player) => {
-                    // set last_match_created_date
-                    console.log("updating player", player.name);
-                    let record = await model.Participant.findOne({
-                        transaction: transaction,
-                        where: { player_api_id: player.id },
-                        attributes: [
-                            [seq.col("created_at"), "last_match_created_date"],
-                            "skill_tier"
-                        ],
-                        order: [ [seq.col("created_at"), "DESC"] ]
-                    });
-                    if (record != null) {
-                        await model.Player.update({
-                            last_match_created_date: record.get("last_match_created_date"),
-                            skill_tier: record.get("skill_tier")
-                        }, {
-                            where: { api_id: player.id },
-                            fields: [ "last_match_created_date", "skill_tier" ],
+            await seq.query("SET unique_checks=0");
+            console.log("inserting batch into db");
+            await seq.transaction({ autocommit: false }, (transaction) => {
+                return Promise.all([
+                    Promise.all([
+                        model.Match.bulkCreate(match_records, {
+                            include: [ model.Roster, model.Asset ],
+                            ignoreDuplicate: true,
                             transaction: transaction
+                        }),
+                        model.Roster.bulkCreate(roster_records, {
+                            include: [ model.Roster ],
+                            ignoreDuplicate: true,
+                            transaction: transaction
+                        }),
+                        model.Participant.bulkCreate(participant_records, {
+                            include: [ model.Player ],
+                            ignoreDuplicate: true,
+                            transaction: transaction
+                        }),
+                        model.ParticipantStats.bulkCreate(participant_stats_records, {
+                            include: [ model.Participant ],
+                            ignoreDuplicate: true,
+                            transaction: transaction
+                        }),
+                        model.Player.bulkCreate(player_records, {
+                            updateOnDuplicate: [
+                                "shard_id", "api_id", "name"
+                            ],
+                            transaction: transaction
+                        }),
+                        model.ItemParticipant.bulkCreate(participant_item_records, {
+                            include: [ model.Participant ],
+                            ignoreDuplicate: true,
+                            transaction: transaction
+                        }),
+                        model.Asset.bulkCreate(asset_records, {
+                            ignoreDuplicate: true,
+                            transaction: transaction
+                        })
+                    ]),
+
+                    // update last_match_created_date and skill tier for players
+                    // that were explicitely pushed into processor
+                    Promise.all(player_objects.map(async (player) => {
+                        // set last_match_created_date
+                        console.log("updating player", player.attributes.name);
+                        let record = await model.Participant.findOne({
+                            transaction: transaction,
+                            where: { player_api_id: player.id },
+                            attributes: [
+                                [seq.col("created_at"), "last_match_created_date"],
+                                "skill_tier"
+                            ],
+                            order: [ [seq.col("created_at"), "DESC"] ]
                         });
-                    }
-                }));
+                        if (record != null) {
+                            await model.Player.update({
+                                last_match_created_date: record.get("last_match_created_date"),
+                                skill_tier: record.get("skill_tier")
+                            }, {
+                                where: { api_id: player.id },
+                                fields: [ "last_match_created_date", "skill_tier" ],
+                                transaction: transaction
+                            });
+                        }
+                    }))
+                ]);
             });
+            await seq.query("SET unique_checks=1");
 
             console.log("acking batch");
             await Promise.all(msgs.map((m) => ch.ack(m)) );
@@ -376,8 +381,13 @@ function snakeCaseKeys(obj) {
         }
 
         // notify web
-        await Promise.all(player_records.map(async (p) =>
-            await ch.publish("amq.topic", "player." + p.name, new Buffer("matches_update")) ));
+        // …about new matches
+        await Promise.all(notify_players.map(async (api_id) =>
+            await ch.publish("amq.topic", "player." + api_id, new Buffer("matches_update")) ));
+        // …about updated lifetime stats
+        await Promise.all(player_objects.map(async (api_player) =>
+            await ch.publish("amq.topic", "player." + api_player.id, new Buffer("stats_update")) ));
+        // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
 
@@ -388,9 +398,9 @@ function snakeCaseKeys(obj) {
                 type: "participant"
             })
         ));
-        Promise.all(player_records.map(async (p) => {
-            if (PREMIUM_FEATURES == false || premium_users.indexOf(p.name) != -1) {
-                await ch.sendToQueue("crunch", new Buffer(p.api_id), {
+        Promise.all(notify_players.map(async (api_id) => {
+            if (PREMIUM_FEATURES == false || premium_users.indexOf(api_id) != -1) {
+                await ch.sendToQueue("crunch", new Buffer(api_id), {
                     persistent: true,
                     type: "player"
                 })
