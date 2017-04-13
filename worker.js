@@ -12,7 +12,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     // matches + players (2 pages for 100 players)
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 4 * 50 * (1 + 5),
-    IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 1000,  // ms
+    IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 2000,  // ms
     PREMIUM_FEATURES = process.env.PREMIUM_FEATURES || false;  // calculate on demand for non-premium users
 
 console.log("features for premium users activated", PREMIUM_FEATURES);
@@ -43,7 +43,6 @@ function snakeCaseKeys(obj) {
             rabbit = await amqp.connect(RABBITMQ_URI, { heartbeat: 30 });
             ch = await rabbit.createChannel();
             await ch.assertQueue("process", {durable: true});
-            await ch.assertQueue("crunch", {durable: true});
             await ch.assertQueue("analyze", {durable: true});
             break;
         } catch (err) {
@@ -391,21 +390,13 @@ function snakeCaseKeys(obj) {
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
 
-        // notify analyzer & cruncher
+        // notify analyzer
         Promise.all(participant_stats_records.map(async (p) =>
             await ch.sendToQueue("analyze", new Buffer(p.participant_api_id), {
                 persistent: true,
                 type: "participant"
             })
         ));
-        Promise.all(player_objects.map(async (api_player) => {
-            if (PREMIUM_FEATURES == false || premium_users.indexOf(api_player.id) != -1) {
-                await ch.sendToQueue("crunch", new Buffer(api_player.id), {
-                    persistent: true,
-                    type: "player"
-                })
-            }
-        }));
     }
 
     // Split participant API data into participant and participant_stats
