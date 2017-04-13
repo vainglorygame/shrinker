@@ -282,7 +282,7 @@ function snakeCaseKeys(obj) {
                     if (processed_players.indexOf(p.player.api_id)) {
                         processed_players.push(p.player.api_id);
                         player_records.push(p.player);
-                        notify_players.push(p.player.api_id);
+                        notify_players.push(p.player);
                     }
                     p.participant_items.forEach((i) => {
                         participant_item_records.push(i);
@@ -382,11 +382,11 @@ function snakeCaseKeys(obj) {
 
         // notify web
         // …about new matches
-        await Promise.all(notify_players.map(async (api_id) =>
-            await ch.publish("amq.topic", "player." + api_id, new Buffer("matches_update")) ));
+        await Promise.all(notify_players.map(async (player) =>
+            await ch.publish("amq.topic", "player." + player.name, new Buffer("matches_update")) ));
         // …about updated lifetime stats
         await Promise.all(player_objects.map(async (api_player) =>
-            await ch.publish("amq.topic", "player." + api_player.id, new Buffer("stats_update")) ));
+            await ch.publish("amq.topic", "player." + api_player.attributes.name, new Buffer("stats_update")) ));
         // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
@@ -398,9 +398,9 @@ function snakeCaseKeys(obj) {
                 type: "participant"
             })
         ));
-        Promise.all(notify_players.map(async (api_id) => {
-            if (PREMIUM_FEATURES == false || premium_users.indexOf(api_id) != -1) {
-                await ch.sendToQueue("crunch", new Buffer(api_id), {
+        Promise.all(notify_players.map(async (player) => {
+            if (PREMIUM_FEATURES == false || premium_users.indexOf(player.api_id) != -1) {
+                await ch.sendToQueue("crunch", new Buffer(player.api_id), {
                     persistent: true,
                     type: "player"
                 })
