@@ -12,10 +12,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     // matches + players (2 pages for 100 players)
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 4 * 50 * (1 + 5),
-    IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 500,  // ms
-    PREMIUM_FEATURES = process.env.PREMIUM_FEATURES || false;  // calculate on demand for non-premium users
+    IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 500;  // ms
 
-console.log("features for premium users activated", PREMIUM_FEATURES);
 
 let camelCaseRegExp = new RegExp(/([a-z])([A-Z]+)/g);
 function camelToSnake(text) {
@@ -161,10 +159,12 @@ function snakeCaseKeys(obj) {
                 where: { api_id: match.id }
             }) > 0) delete match_objects[idx];
         }));
-        match_objects = match_objects.filter((match, idx, self) =>
-            self.indexOf(match) === idx);
-        player_objects = player_objects.filter((player, idx, self) =>
-            self.indexOf(player) === idx);
+        let match_ids = match_objects.map((p) => p.id);
+        match_objects = match_objects.filter((match, idx) =>
+            match_ids.indexOf(match.id) === idx);
+        let player_ids = player_objects.map((p) => p.id);
+        player_objects = player_objects.filter((player, idx) =>
+            player_ids.indexOf(player.id) === idx);
 
         // populate `_records`
         // data from `/player`
@@ -186,8 +186,6 @@ function snakeCaseKeys(obj) {
 
         // data from `/matches`
         match_objects.forEach((match) => {
-            console.log("processing match", match.id);
-
             // flatten jsonapi nested response into our db structure-like shape
             // also, push missing fields
             match.rosters = match.rosters.map((roster) => {
@@ -301,36 +299,31 @@ function snakeCaseKeys(obj) {
             await seq.transaction({ autocommit: false }, async (transaction) => {
                 await Promise.all([
                     model.Match.bulkCreate(match_records, {
-                        include: [ model.Roster, model.Asset ],
-                        ignoreDuplicate: true,
+                        ignoreDuplicates: true,  // should not happen
                         transaction: transaction
                     }),
                     model.Roster.bulkCreate(roster_records, {
-                        include: [ model.Roster ],
-                        ignoreDuplicate: true,
-                        transaction: transaction
-                    }),
-                    model.Participant.bulkCreate(participant_records, {
-                        include: [ model.Player ],
-                        ignoreDuplicate: true,
-                        transaction: transaction
-                    }),
-                    model.ParticipantStats.bulkCreate(participant_stats_records, {
-                        include: [ model.Participant ],
-                        ignoreDuplicate: true,
-                        transaction: transaction
-                    }),
-                    model.Player.bulkCreate(player_records, {
                         ignoreDuplicates: true,
                         transaction: transaction
                     }),
+                    model.Participant.bulkCreate(participant_records, {
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }),
+                    model.ParticipantStats.bulkCreate(participant_stats_records, {
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }),
+                    model.Player.bulkCreate(player_records, {
+                        ignoreDuplicates: true,  // update is done in next paragraph
+                        transaction: transaction
+                    }),
                     model.ItemParticipant.bulkCreate(participant_item_records, {
-                        include: [ model.Participant ],
-                        ignoreDuplicate: true,
+                        ignoreDuplicates: true,
                         transaction: transaction
                     }),
                     model.Asset.bulkCreate(asset_records, {
-                        ignoreDuplicate: true,
+                        ignoreDuplicates: true,
                         transaction: transaction
                     })
                 ])
@@ -341,7 +334,6 @@ function snakeCaseKeys(obj) {
                 // that were explicitely pushed into processor
                 await Promise.all(player_records.map(async (player) => {
                     // set last_match_created_date
-                    console.log("updating player", player.name);
                     let record = await model.Participant.findOne({
                         transaction: transaction,
                         where: { player_api_id: player.api_id },
@@ -354,11 +346,12 @@ function snakeCaseKeys(obj) {
                     if (record != null) {
                         player.last_match_created_date = record.get("last_match_created_date");
                         player.skill_tier = record.get("skill_tier");
-                        await model.Player.upsert(player, {
+                        await model.Player.update(player, {
                             where: {
                                 // API returns from /player `createdAt`
                                 // in case of a region change, createdAt is newer
                                 // on the active account
+                                api_id: player.api_id,
                                 created_at: {
                                     $lte: player.createdAt
                                 }
