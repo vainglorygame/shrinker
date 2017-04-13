@@ -95,7 +95,7 @@ function snakeCaseKeys(obj) {
 
     // TODO expire this cache after some time
     let premium_users = (await model.Gamer.findAll()).map((gamer) =>
-        gamer.name);
+        gamer.api_id);
 
     // as long as the queue is filled, msg are not ACKed
     // server sends as long as there are less than `prefetch` unACKed
