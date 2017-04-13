@@ -40,7 +40,7 @@ function snakeCaseKeys(obj) {
     while (true) {
         try {
             seq = new Seq(DATABASE_URI, { logging: () => {} });
-            rabbit = await amqp.connect(RABBITMQ_URI);
+            rabbit = await amqp.connect(RABBITMQ_URI, { heartbeat: 30 });
             ch = await rabbit.createChannel();
             await ch.assertQueue("process", {durable: true});
             await ch.assertQueue("crunch", {durable: true});
