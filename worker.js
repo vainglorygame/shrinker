@@ -41,7 +41,6 @@ function snakeCaseKeys(obj) {
             rabbit = await amqp.connect(RABBITMQ_URI, { heartbeat: 120 });
             ch = await rabbit.createChannel();
             await ch.assertQueue("process", {durable: true});
-            await ch.assertQueue("analyze", {durable: true});
             break;
         } catch (err) {
             console.error(err);
@@ -385,14 +384,6 @@ function snakeCaseKeys(obj) {
         // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
-
-        // notify analyzer
-        Promise.all(participant_stats_records.map(async (p) =>
-            await ch.sendToQueue("analyze", new Buffer(p.participant_api_id), {
-                persistent: true,
-                type: "participant"
-            })
-        ));
     }
 
     // Split participant API data into participant and participant_stats
