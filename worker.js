@@ -418,7 +418,7 @@ function snakeCaseKeys(obj) {
         // (Sayoc = Taka)
         p.hero_id = hero_db_map[hero_name_map[participant.actor]];
         // TODO don't hardcode this, waiting for `match.patch_version` to be available
-        if (p_s.created_at < new Date(2017, 3, 28))
+        if (p_s.created_at < new Date("2017-03-28"))
             p.series_id = series_db_map["Patch 2.2"];
         else
             p.series_id = series_db_map["Patch 2.3"];
