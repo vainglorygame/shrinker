@@ -201,6 +201,7 @@ function snakeCaseKeys(obj) {
                     roster.attributes.stats.winner = false;
 
                 roster.participants = roster.participants.map((participant) => {
+                    // ! attributes added here need to be added via `calculate_participant_stats` too
                     participant.attributes.shardId = roster.attributes.shardId;
                     participant.rosterApiId = roster.id;
                     participant.matchApiId = match.id;
@@ -418,7 +419,7 @@ function snakeCaseKeys(obj) {
         // attributes to copy from API to participant
         // these don't change over the duration of the match
         // (or aren't in Telemetry)
-        ["api_id", "shard_id", "player_api_id", "roster_api_id",
+        ["api_id", "shard_id", "player_api_id", "roster_api_id", "match_api_id",
             "winner", "went_afk", "first_afk_time",
             "skin_key", "skill_tier", "level",
             "karma_level", "actor"].map((attr) =>
