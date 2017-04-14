@@ -355,7 +355,7 @@ function snakeCaseKeys(obj) {
                                 // on the active account
                                 api_id: player.api_id,
                                 created_at: {
-                                    $lte: player.createdAt
+                                    $lte: player.created_at
                                 }
                             },
                             transaction: transaction
