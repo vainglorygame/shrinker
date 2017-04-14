@@ -12,7 +12,7 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     // matches + players (2 pages for 100 players)
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 4 * 50 * (1 + 5),
-    IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 500;  // ms
+    IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 700;  // ms
 
 
 let camelCaseRegExp = new RegExp(/([a-z])([A-Z]+)/g);
