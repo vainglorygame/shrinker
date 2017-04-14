@@ -430,6 +430,11 @@ function snakeCaseKeys(obj) {
             "gold", "farm"].map((attr) =>
                 p_s[attr] = participant[attr]);
 
+        // score calculations
+        var impact_score = -0.28779906 + (p_s.kills * 0.22290324) + (p_s.deaths * -0.50438917) + (p_s.assists * 0.34841597);
+        p_s.impact_score = (impact_score + 10) / (10 + 10);
+
+
         // traits calculations
         if (roster.hero_kills == 0) p_s.kill_participation = 0;
         else p_s.kill_participation = (p_s.kills + p_s.assists) / roster.hero_kills;
