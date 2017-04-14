@@ -434,13 +434,14 @@ function snakeCaseKeys(obj) {
         if (roster.hero_kills == 0) p_s.kill_participation = 0;
         else p_s.kill_participation = (p_s.kills + p_s.assists) / roster.hero_kills;
 
+        /* example
         p_s.sustain_score = participant.items.reduce((score, item) => {
             // items[], itemGrants{}, itemUse{}, itemSells{} are the API objects
             // old item names to clean names need to be mapped via `item_name_map[oldname]`
             if (["Eve of Harvest", "Serpent Mask"].indexOf(item_name_map[item]) != -1)
                 return score + 20;
             return score;
-        }, 0);
+        }, 0);*/
 
         return [p, p_s];
     }
