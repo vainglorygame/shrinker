@@ -10,11 +10,12 @@ var amqp = require("amqplib"),
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
-    // matches + players (2 pages for 100 players)
-    BATCHSIZE = parseInt(process.env.BATCHSIZE) || 4 * 50 * (1 + 5),
+    // matches + players, 5 players with 50 matches as default
+    BATCHSIZE = parseInt(process.env.BATCHSIZE) || 5 * (50 + 1),
+    LOAD_TIMEOUT = parseFloat(process.env.LOAD_TIMEOUT) || 5000, // ms
     IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 700;  // ms
 
-
+// helpers
 let camelCaseRegExp = new RegExp(/([a-z])([A-Z]+)/g);
 function camelToSnake(text) {
     return text.replace(camelCaseRegExp, function(m, $1, $2) {
@@ -32,6 +33,23 @@ function snakeCaseKeys(obj) {
     return obj;
 }
 
+// helper to convert API response into flat JSON
+// db structure is (almost) 1:1 the API structure
+// so we can insert the flat API response as-is
+function flatten(obj) {
+    let attrs = obj.attributes || {},
+        stats = attrs.stats || {},
+        o = Object.assign({}, obj, attrs, stats);
+    o.api_id = o.id;  // rename
+    delete o.id;
+    delete o.type;
+    delete o.attributes;
+    delete o.stats;
+    delete o.relationships;
+    return snakeCaseKeys(o);
+}
+
+// main code
 (async () => {
     let seq, model, rabbit, ch;
 
@@ -53,8 +71,8 @@ function snakeCaseKeys(obj) {
 
     model = require("../orm/model")(seq, Seq);
 
-    let queue = [],
-        timer = undefined;
+    let load_timer = undefined,
+        idle_timer = undefined;
 
     let item_db_map = new Map(),      // "Halcyon Potion" to id
         hero_db_map = new Map(),      // "*SAW*" to id
@@ -63,11 +81,6 @@ function snakeCaseKeys(obj) {
         role_db_map = new Map(),      // "captain" to id
         hero_role_map = new Map();    // SAW.id to "carry"
 
-    /* recreate for debugging
-    await seq.query("SET FOREIGN_KEY_CHECKS=0");
-    await seq.sync({force: true});
-    */
-    // TODO instead of object, use Map
     await Promise.all([
         model.Item.findAll()
             .map((item) => item_db_map[item.name] = item.id),
@@ -92,81 +105,74 @@ function snakeCaseKeys(obj) {
             .map((role) => role_db_map[role.name] = role.id)
     ]);
 
-    // TODO expire this cache after some time
-    let premium_users = (await model.Gamer.findAll()).map((gamer) =>
-        gamer.api_id);
-
     // as long as the queue is filled, msg are not ACKed
     // server sends as long as there are less than `prefetch` unACKed
     await ch.prefetch(BATCHSIZE);
 
-    ch.consume("process", (msg) => {
-        queue.push(msg);
+    let player_data = new Set(),
+        match_data = new Set(),
+        msg_buffer = new Set();
+
+    ch.consume("process", async (msg) => {
+        if (msg.properties.type == "player") {
+            // apigrabber sends an array
+            player_data.add(...JSON.parse(msg.content));
+            msg_buffer.add(msg);
+        }
+        if (msg.properties.type == "match") {
+            // apigrabber sends a single object
+            let match = JSON.parse(msg.content);
+            if (await model.Match.count({
+                where: { api_id: match.id }
+            }) > 0) {
+                await ch.nack(msg, false, false);  // discard
+                return;
+            } else
+                match_data.add(match);
+            msg_buffer.add(msg);
+        }
 
         // fill queue until batchsize or idle
-        if (timer != undefined) clearTimeout(timer);
-        timer = setTimeout(process, IDLE_TIMEOUT);
-        if (queue.length == BATCHSIZE)
-            process();
+        // timeout after first job
+        if (load_timer == undefined)
+            load_timer = setTimeout(process, LOAD_TIMEOUT);
+        // timeout after last job
+        if (idle_timer != undefined)
+            clearTimeout(idle_timer);
+        idle_timer = setTimeout(process, IDLE_TIMEOUT);
+        // maximum data pressure
+        if (match_data.size + player_data.size == BATCHSIZE)
+            await process();
     }, { noAck: false });
 
     async function process() {
-        console.log("processing batch", queue.length);
+        console.log("processing batch of players, matches",
+            player_data.size, match_data.size);
 
         // clean up to allow processor to accept while we wait for db
-        clearTimeout(timer);
-        timer = undefined;
-        let msgs = queue;
-        queue = [];
+        clearTimeout(idle_timer);
+        clearTimeout(load_timer);
+        let player_objects = new Set(player_data),
+            match_objects = new Set(match_data),
+            msgs = new Set(msg_buffer);
+        idle_timer = undefined;
+        load_timer = undefined;
+        player_data.clear();
+        match_data.clear();
+        msg_buffer.clear();
 
-        // helper to convert API response into flat JSON
-        // db structure is (almost) 1:1 the API structure
-        // so we can insert the flat API response as-is
-        function flatten(obj) {
-            let attrs = obj.attributes || {},
-                stats = attrs.stats || {},
-                o = Object.assign({}, obj, attrs, stats);
-            o.api_id = o.id;  // rename
-            delete o.id;
-            delete o.type;
-            delete o.attributes;
-            delete o.stats;
-            delete o.relationships;
-            return snakeCaseKeys(o);
-        }
+        let processed_players = new Set(), // to sort out duplicates
+            notify_players_matches = new Set(),  // players with new matches
+            notify_players_stats = new Set();  // players with new stats
 
-        // to sort out duplicates
-        // TODO refactor this
-        // TODO use `Set` where appropriate
-        let processed_players = [];
-
-        // we aggregate record objects to do a bulk insert
+        // aggregate record objects to do a bulk insert
         let match_records = [],
             roster_records = [],
             participant_records = [],
             participant_stats_records = [],
             player_records = [],
             asset_records = [],
-            participant_item_records = [],
-            player_msgs = msgs.filter((m) => m.properties.type == "player"),
-            match_msgs = msgs.filter((m) => m.properties.type == "match"),
-            player_objects = [].concat(...player_msgs.map((msg) =>
-                JSON.parse(msg.content))),
-            match_objects = match_msgs.map((msg) => JSON.parse(msg.content)),
-            notify_players = [];  // players that have new matches
-
-        // reject duplicates
-        await Promise.all(match_objects.map(async (match, idx) => {
-            if (await model.Match.count({
-                where: { api_id: match.id }
-            }) > 0) delete match_objects[idx];
-        }));
-        let match_ids = match_objects.map((p) => p.id);
-        match_objects = match_objects.filter((match, idx) =>
-            match_ids.indexOf(match.id) === idx);
-        let player_ids = player_objects.map((p) => p.id);
-        player_objects = player_objects.filter((player, idx) =>
-            player_ids.indexOf(player.id) === idx);
+            participant_item_records = [];
 
         // populate `_records`
         // data from `/player`
@@ -176,8 +182,9 @@ function snakeCaseKeys(obj) {
             // with search, updater can't update last_update
             player.last_update = seq.fn("NOW");
             console.log("processing player", player.name);
-            processed_players.push(player.api_id);
+            processed_players.add(player.api_id);
             player_records.push(player);
+            notify_players_stats.add(player.name);
         });
 
         // reject invalid matches (handling API bugs)
@@ -279,10 +286,10 @@ function snakeCaseKeys(obj) {
                     // deduplicate player
                     // in a batch, it is very likely that players are duplicated
                     // so this improves performance a bit
-                    if (processed_players.indexOf(p.player.api_id) == -1) {
-                        processed_players.push(p.player.api_id);
+                    if (!processed_players.has(p.player.api_id)) {
+                        processed_players.add(p.player.api_id);
                         player_records.push(p.player);
-                        notify_players.push(p.player);
+                        notify_players_matches.add(p.player.name);
                     }
                     p.participant_items.forEach((i) => {
                         participant_item_records.push(i);
@@ -366,31 +373,27 @@ function snakeCaseKeys(obj) {
             });
             await seq.query("SET unique_checks=1");
 
-            console.log("acking batch");
-            try {
-                await Promise.all(msgs.map((m) => ch.ack(m)) );
-            } catch (err) {
-                console.error(err);  // 406 Precondition failed
-                // processor gets duplicate messages for some reason
-                // TODO
-            }
+            console.log("acking batch", msgs.size);
+            for (let msg of msgs)
+                await ch.ack(msg);
         } catch (err) {
             // this should only happen for Deadlocks in prod
             // it *must not* fail due to broken schema or missing dependency
             // TODO: eliminate such cases earlier in the chain
             // and immediately NACK those broken matches, requeueing only the rest
             console.error(err);
-            await Promise.all(msgs.map((m) => ch.nack(m, true)) );  // requeue
+            for (let msg of msgs)
+                await ch.nack(msg, false, true);
             return;  // give up
         }
 
         // notify web
         // …about new matches
-        await Promise.all(notify_players.map(async (player) =>
-            await ch.publish("amq.topic", "player." + player.name, new Buffer("matches_update")) ));
+        for (let name of notify_players_matches)
+            await ch.publish("amq.topic", "player." + name, new Buffer("matches_update"));
         // …about updated lifetime stats
-        await Promise.all(player_objects.map(async (api_player) =>
-            await ch.publish("amq.topic", "player." + api_player.attributes.name, new Buffer("stats_update")) ));
+        for (let name of notify_players_stats)
+            await ch.publish("amq.topic", "player." + name, new Buffer("stats_update"));
         // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
