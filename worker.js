@@ -367,7 +367,13 @@ function snakeCaseKeys(obj) {
             await seq.query("SET unique_checks=1");
 
             console.log("acking batch");
-            await Promise.all(msgs.map((m) => ch.ack(m)) );
+            try {
+                await Promise.all(msgs.map((m) => ch.ack(m)) );
+            } catch (err) {
+                console.error(err);  // 406 Precondition failed
+                // processor gets duplicate messages for some reason
+                // TODO
+            }
         } catch (err) {
             // this should only happen for Deadlocks in prod
             // it *must not* fail due to broken schema or missing dependency
