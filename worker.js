@@ -226,7 +226,8 @@ function flatten(obj) {
                     // map items: names/id -> name -> db
                     let itms = [],
                         item_use = (arr, action) =>
-                            arr.map((item) => { return {
+                            arr.map((item, idx) => { return {
+                                number: idx,
                                 participant_api_id: participant.id,
                                 item_id: item_db_map[item_name_map[item]],
                                 action: action
