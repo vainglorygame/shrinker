@@ -6,6 +6,7 @@ var amqp = require("amqplib"),
     Seq = require("sequelize"),
     item_name_map = require("../orm/items"),
     hero_name_map = require("../orm/heroes"),
+    Promise = require("bluebird"),
     sleep = require("sleep-promise");
 
 var RABBITMQ_URI = process.env.RABBITMQ_URI,
@@ -171,20 +172,59 @@ function flatten(obj) {
             participant_records = [],
             participant_stats_records = [],
             player_records = [],
+            player_records_direct = [],  // via `/players`
             asset_records = [],
             participant_item_records = [];
 
         // populate `_records`
-        // data from `/player`
-        player_objects.forEach((p) => {
+        // data from `/players`
+        // `each` executes serially so there are
+        // no race conditions within one batch
+        await Promise.each(player_objects, async (p) => {
             let player = flatten(p);
+            if (processed_players.has(player.api_id)) {
+                console.log("got player in multiple regions",
+                    player.name, player.shard_id);
+                // see below, this is handling region changes
+                // when player objects end up in the same batch
+                let duplicate = player_records_direct.find(
+                    (pr) => pr.api_id == player.api_id);
+                if (duplicate.created_at < player.created_at) {
+                    // replace by newer one as below
+                    player_records_direct.splice(
+                        player_records_direct.indexOf(duplicate), 1);
+                } else {
+                    console.log("ignoring - player appears in multiple regions",
+                    player.name, player.shard_id);
+                    return;
+                }
+            } else {
+                processed_players.add(player.api_id);
+            }
             // player objects that arrive here came from a search
             // with search, updater can't update last_update
             player.last_update = seq.fn("NOW");
-            console.log("processing player", player.name);
-            processed_players.add(player.api_id);
-            player_records.push(player);
-            notify_players_stats.add(player.name);
+            console.log("processing player",
+                player.name, player.shard_id);
+            // check whether there is a player in db
+            // that has a more recent `created_at`
+            // this is only the case with region changes
+            let count = await model.Player.count({
+                where: {
+                    api_id: player.api_id,
+                    created_at: {
+                        // equal: just update last_update
+                        $gt: player.created_at
+                    }
+                }});
+            if (count > 0) {
+                console.log("ignoring - player seems to have switched regions",
+                    player.name, player.shard_id);
+                return;
+            } else {
+                player_records_direct.push(player);
+                notify_players_stats.add(player.name);
+            }
         });
 
         // reject invalid matches (handling API bugs)
@@ -326,7 +366,11 @@ function flatten(obj) {
                         transaction: transaction
                     }),
                     model.Player.bulkCreate(player_records, {
-                        ignoreDuplicates: true,  // update is done in next paragraph
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }),
+                    model.Player.bulkCreate(player_records_direct, {
+                        updateOnDuplicate: [],  // all
                         transaction: transaction
                     }),
                     model.ItemParticipant.bulkCreate(participant_item_records, {
@@ -338,39 +382,6 @@ function flatten(obj) {
                         transaction: transaction
                     })
                 ])
-
-                // TODO refactor, make this easier to read
-                // TODO once MadGlory adds skill_tier to player, run this in bulk
-                // update last_match_created_date and skill tier for players
-                // that were explicitely pushed into processor
-                await Promise.all(player_records.map(async (player) => {
-                    // set last_match_created_date
-                    let record = await model.Participant.findOne({
-                        transaction: transaction,
-                        where: { player_api_id: player.api_id },
-                        attributes: [
-                            [seq.col("created_at"), "last_match_created_date"],
-                            "skill_tier"
-                        ],
-                        order: [ [seq.col("created_at"), "DESC"] ]
-                    });
-                    if (record != null) {
-                        player.last_match_created_date = record.get("last_match_created_date");
-                        player.skill_tier = record.get("skill_tier");
-                        await model.Player.update(player, {
-                            where: {
-                                // API returns from /player `createdAt`
-                                // in case of a region change, createdAt is newer
-                                // on the active account
-                                api_id: player.api_id,
-                                created_at: {
-                                    $lte: player.created_at
-                                }
-                            },
-                            transaction: transaction
-                        });
-                    }
-                }))
             });
             await seq.query("SET unique_checks=1");
 
