@@ -13,6 +13,8 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     // matches + players, 5 players with 50 matches as default
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 5 * (50 + 1),
+    // maximum number of elements to be inserted in one statement
+    CHUNKSIZE = parseInt(process.env.CHUNKSIZE) || 100,
     LOAD_TIMEOUT = parseFloat(process.env.LOAD_TIMEOUT) || 5000, // ms
     IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 700;  // ms
 
@@ -32,6 +34,13 @@ function snakeCaseKeys(obj) {
         delete obj[key];
     });
     return obj;
+}
+
+// split an array into arrays of max chunksize
+function* chunks(arr) {
+    for (let c=0, len=arr.length; c<len; c+=CHUNKSIZE) {
+        yield arr.slice(c, c+CHUNKSIZE);
+    }
 }
 
 // helper to convert API response into flat JSON
@@ -349,38 +358,54 @@ function flatten(obj) {
             console.log("inserting batch into db");
             await seq.transaction({ autocommit: false }, async (transaction) => {
                 await Promise.all([
-                    model.Match.bulkCreate(match_records, {
-                        ignoreDuplicates: true,  // should not happen
-                        transaction: transaction
-                    }),
-                    model.Roster.bulkCreate(roster_records, {
-                        ignoreDuplicates: true,
-                        transaction: transaction
-                    }),
-                    model.Participant.bulkCreate(participant_records, {
-                        ignoreDuplicates: true,
-                        transaction: transaction
-                    }),
-                    model.ParticipantStats.bulkCreate(participant_stats_records, {
-                        ignoreDuplicates: true,
-                        transaction: transaction
-                    }),
-                    model.Player.bulkCreate(player_records, {
-                        ignoreDuplicates: true,
-                        transaction: transaction
-                    }),
-                    model.Player.bulkCreate(player_records_direct, {
-                        updateOnDuplicate: [],  // all
-                        transaction: transaction
-                    }),
-                    model.ItemParticipant.bulkCreate(participant_item_records, {
-                        ignoreDuplicates: true,
-                        transaction: transaction
-                    }),
-                    model.Asset.bulkCreate(asset_records, {
-                        ignoreDuplicates: true,
-                        transaction: transaction
-                    })
+                    Promise.map(chunks(match_records), async (m_r) =>
+                        model.Match.bulkCreate(m_r, {
+                            ignoreDuplicates: true,  // should not happen
+                            transaction: transaction
+                        })
+                    ),
+                    Promise.map(chunks(roster_records), async (r_r) =>
+                        model.Roster.bulkCreate(r_r, {
+                            ignoreDuplicates: true,
+                            transaction: transaction
+                        })
+                    ),
+                    Promise.map(chunks(participant_records), async (p_r) =>
+                        model.Participant.bulkCreate(p_r, {
+                            ignoreDuplicates: true,
+                            transaction: transaction
+                        })
+                    ),
+                    Promise.map(chunks(participant_stats_records), async (p_s_r) =>
+                        model.ParticipantStats.bulkCreate(p_s_r, {
+                            ignoreDuplicates: true,
+                            transaction: transaction
+                        })
+                    ),
+                    Promise.map(chunks(player_records), async (pl_r) =>
+                        model.Player.bulkCreate(pl_r, {
+                            ignoreDuplicates: true,
+                            transaction: transaction
+                        })
+                    ),
+                    Promise.map(chunks(player_records_direct), async (p_r_d) =>
+                        model.Player.bulkCreate(player_records_direct, {
+                            updateOnDuplicate: [],  // all
+                            transaction: transaction
+                        })
+                    ),
+                    Promise.map(chunks(participant_item_records), async (p_i_r) =>
+                        model.ItemParticipant.bulkCreate(p_i_r, {
+                            ignoreDuplicates: true,
+                            transaction: transaction
+                        })
+                    ),
+                    Promise.map(chunks(asset_records), async (a_r) =>
+                        model.Asset.bulkCreate(a_r, {
+                            ignoreDuplicates: true,
+                            transaction: transaction
+                        })
+                    )
                 ])
             });
             await seq.query("SET unique_checks=1");
