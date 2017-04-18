@@ -3,6 +3,7 @@
 "use strict";
 
 const amqp = require("amqplib"),
+    winston = require("winston"),
     Seq = require("sequelize"),
     item_name_map = require("../orm/items"),
     hero_name_map = require("../orm/heroes"),
@@ -17,6 +18,17 @@ const RABBITMQ_URI = process.env.RABBITMQ_URI,
     CHUNKSIZE = parseInt(process.env.CHUNKSIZE) || 100,
     LOAD_TIMEOUT = parseFloat(process.env.LOAD_TIMEOUT) || 5000, // ms
     IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 700;  // ms
+
+const logger = new (winston.Logger)({
+    transports: [
+        new (winston.transports.Console)({
+            timestamp: () => Date.now(),
+            formatter: (options) => winston.config.colorize(options.level,
+`${new Date(options.timestamp()).toISOString()} ${options.level.toUpperCase()} ${(options.message? options.message:"")} ${(options.meta && Object.keys(options.meta).length? JSON.stringify(options.meta):"")}`)
+        })
+    ]
+});
+
 
 // helpers
 const camelCaseRegExp = new RegExp(/([a-z])([A-Z]+)/g);
@@ -72,7 +84,7 @@ function flatten(obj) {
             await ch.assertQueue("process", {durable: true});
             break;
         } catch (err) {
-            console.error(err);
+            logger.error("Error connecting", err);
             await sleep(5000);
         }
     }
@@ -80,7 +92,8 @@ function flatten(obj) {
     model = require("../orm/model")(seq, Seq);
 
     let load_timer = undefined,
-        idle_timer = undefined;
+        idle_timer = undefined,
+        profiler = undefined;
 
     let item_db_map = new Map(),      // "Halcyon Potion" to id
         hero_db_map = new Map(),      // "*SAW*" to id
@@ -141,6 +154,8 @@ function flatten(obj) {
         }
 
         // fill queue until batchsize or idle
+        // for logging of the time between batch fill and batch process
+        if (profiler == undefined) profiler = logger.startTimer();
         // timeout after first job
         if (load_timer == undefined)
             load_timer = setTimeout(process, LOAD_TIMEOUT);
@@ -154,7 +169,10 @@ function flatten(obj) {
     }, { noAck: false });
 
     async function process() {
-        console.log("processing batch of players, matches",
+        profiler.done("buffer filled");
+        profiler = undefined;
+
+        logger.info("processing batch of %s players and %s matches",
             player_data.size, match_data.size);
 
         // clean up to allow processor to accept while we wait for db
@@ -190,7 +208,7 @@ function flatten(obj) {
         await Promise.each(player_objects, async (p) => {
             const player = flatten(p);
             if (processed_players.has(player.api_id)) {
-                console.log("got player in multiple regions",
+                logger.warn("got player '%s' in additional region '%s'",
                     player.name, player.shard_id);
                 // see below, this is handling region changes
                 // when player objects end up in the same batch
@@ -201,7 +219,7 @@ function flatten(obj) {
                     player_records_direct.splice(
                         player_records_direct.indexOf(duplicate), 1);
                 } else {
-                    console.log("ignoring - player appears in multiple regions",
+                    logger.warn("ignoring player '%s' from additional region '%s'",
                     player.name, player.shard_id);
                     return;
                 }
@@ -211,7 +229,7 @@ function flatten(obj) {
             // player objects that arrive here came from a search
             // with search, updater can't update last_update
             player.last_update = seq.fn("NOW");
-            console.log("processing player",
+            logger.info("processing player '%s' in '%s'",
                 player.name, player.shard_id);
             // check whether there is a player in db
             // that has a more recent `created_at`
@@ -225,7 +243,7 @@ function flatten(obj) {
                     }
                 }});
             if (count > 0) {
-                console.log("ignoring - player seems to have switched regions",
+                logger.warn("ignoring player '%s' who seems to have switched from region '%s'",
                     player.name, player.shard_id);
                 return;
             } else {
@@ -349,11 +367,12 @@ function flatten(obj) {
             });
         });
 
+        let transaction_profiler = logger.startTimer();
         // now access db
         try {
             // upsert whole batch in parallel
             await seq.query("SET unique_checks=0");
-            console.log("inserting batch into db");
+            logger.info("inserting batch into db");
             await seq.transaction({ autocommit: false }, async (transaction) => {
                 await Promise.all([
                     Promise.map(chunks(match_records), async (m_r) =>
@@ -412,7 +431,7 @@ function flatten(obj) {
             });
             await seq.query("SET unique_checks=1");
 
-            console.log("acking batch", msgs.size);
+            logger.info("acking batch with %s messages", msgs.size);
             for (let msg of msgs)
                 await ch.ack(msg);
         } catch (err) {
@@ -420,11 +439,13 @@ function flatten(obj) {
             // it *must not* fail due to broken schema or missing dependency
             // TODO: eliminate such cases earlier in the chain
             // and immediately NACK those broken matches, requeueing only the rest
-            console.error(err);
+            logger.error("SQL error: %s, %j, %s",
+                err.name, err.errors, err.parent.sql);
             for (let msg of msgs)
                 await ch.nack(msg, false, true);
             return;  // give up
         }
+        transaction_profiler.done("database transaction");
 
         // notify web
         // …about new matches
