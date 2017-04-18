@@ -388,7 +388,11 @@ function flatten(obj) {
                     ),
                     Promise.map(chunks(player_records_direct), async (p_r_d) =>
                         model.Player.bulkCreate(player_records_direct, {
-                            updateOnDuplicate: [],  // all
+                            // if set to [] (all), upsert messes with autoincrement
+                            updateOnDuplicate: [
+                                "shard_id", "api_id", "name", "last_update",
+                                "created_at", "level", "xp", "lifetime_gold"
+                            ],
                             transaction: transaction
                         })
                     ),
