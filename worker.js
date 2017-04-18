@@ -1,15 +1,15 @@
 #!/usr/bin/node
 /* jshint esnext:true */
-'use strict';
+"use strict";
 
-var amqp = require("amqplib"),
+const amqp = require("amqplib"),
     Seq = require("sequelize"),
     item_name_map = require("../orm/items"),
     hero_name_map = require("../orm/heroes"),
     Promise = require("bluebird"),
     sleep = require("sleep-promise");
 
-var RABBITMQ_URI = process.env.RABBITMQ_URI,
+const RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     // matches + players, 5 players with 50 matches as default
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 5 * (50 + 1),
@@ -19,16 +19,15 @@ var RABBITMQ_URI = process.env.RABBITMQ_URI,
     IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 700;  // ms
 
 // helpers
-let camelCaseRegExp = new RegExp(/([a-z])([A-Z]+)/g);
+const camelCaseRegExp = new RegExp(/([a-z])([A-Z]+)/g);
 function camelToSnake(text) {
-    return text.replace(camelCaseRegExp, function(m, $1, $2) {
-        return $1 + "_" + $2.toLowerCase();
-    });
+    return text.replace(camelCaseRegExp, (m, $1, $2) =>
+        $1 + "_" + $2.toLowerCase());
 }
 
 function snakeCaseKeys(obj) {
     Object.keys(obj).forEach((key) => {
-        let new_key = camelToSnake(key);
+        const new_key = camelToSnake(key);
         if (new_key == key) return;
         obj[new_key] = obj[key];
         delete obj[key];
@@ -38,18 +37,17 @@ function snakeCaseKeys(obj) {
 
 // split an array into arrays of max chunksize
 function* chunks(arr) {
-    for (let c=0, len=arr.length; c<len; c+=CHUNKSIZE) {
+    for (let c=0, len=arr.length; c<len; c+=CHUNKSIZE)
         yield arr.slice(c, c+CHUNKSIZE);
-    }
 }
 
 // helper to convert API response into flat JSON
 // db structure is (almost) 1:1 the API structure
 // so we can insert the flat API response as-is
 function flatten(obj) {
-    let attrs = obj.attributes || {},
-        stats = attrs.stats || {},
-        o = Object.assign({}, obj, attrs, stats);
+    const attrs = obj.attributes || {},
+        stats = attrs.stats || {};
+    let o = Object.assign({}, obj, attrs, stats);
     o.api_id = o.id;  // rename
     delete o.id;
     delete o.type;
@@ -131,7 +129,7 @@ function flatten(obj) {
         }
         if (msg.properties.type == "match") {
             // apigrabber sends a single object
-            let match = JSON.parse(msg.content);
+            const match = JSON.parse(msg.content);
             if (await model.Match.count({
                 where: { api_id: match.id }
             }) > 0) {
@@ -162,7 +160,7 @@ function flatten(obj) {
         // clean up to allow processor to accept while we wait for db
         clearTimeout(idle_timer);
         clearTimeout(load_timer);
-        let player_objects = new Set(player_data),
+        const player_objects = new Set(player_data),
             match_objects = new Set(match_data),
             msgs = new Set(msg_buffer);
         idle_timer = undefined;
@@ -190,13 +188,13 @@ function flatten(obj) {
         // `each` executes serially so there are
         // no race conditions within one batch
         await Promise.each(player_objects, async (p) => {
-            let player = flatten(p);
+            const player = flatten(p);
             if (processed_players.has(player.api_id)) {
                 console.log("got player in multiple regions",
                     player.name, player.shard_id);
                 // see below, this is handling region changes
                 // when player objects end up in the same batch
-                let duplicate = player_records_direct.find(
+                const duplicate = player_records_direct.find(
                     (pr) => pr.api_id == player.api_id);
                 if (duplicate.created_at < player.created_at) {
                     // replace by newer one as below
@@ -218,7 +216,7 @@ function flatten(obj) {
             // check whether there is a player in db
             // that has a more recent `created_at`
             // this is only the case with region changes
-            let count = await model.Player.count({
+            const count = await model.Player.count({
                 where: {
                     api_id: player.api_id,
                     created_at: {
@@ -273,8 +271,7 @@ function flatten(obj) {
                     participant.attributes.stats.jungleKills = participant.attributes.stats.jungleKills || 0;
 
                     // map items: names/id -> name -> db
-                    let itms = [],
-                        item_use = (arr, action) =>
+                    const item_use = (arr, action) =>
                             arr.map((item, idx) => { return {
                                 number: idx,
                                 participant_api_id: participant.id,
@@ -285,6 +282,7 @@ function flatten(obj) {
                             [].concat(...  // 3 flatten
                                 Object.entries(obj).map(  // 1 map over (key, value)
                                     (tuple) => Array(tuple[1]).fill(tuple[0])))  // 2 create Array [key] * value
+                    let itms = [];
 
                     itms = itms.concat(item_use(participant.attributes.stats.items, "final"));
                     itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemGrants), "grant"));
@@ -329,7 +327,7 @@ function flatten(obj) {
             match.rosters.forEach((r) => {
                 roster_records.push(r);
                 r.participants.forEach((p) => {
-                    let p_pstats = calculate_participant_stats(match, r, p);
+                    const p_pstats = calculate_participant_stats(match, r, p);
                     // participant gets split into participant and p_stats
                     participant_records.push(p_pstats[0]);
                     participant_stats_records.push(p_pstats[1]);
