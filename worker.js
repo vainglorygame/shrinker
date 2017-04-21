@@ -228,7 +228,7 @@ function flatten(obj) {
                 // when player objects end up in the same batch
                 const duplicate = player_records_direct.find(
                     (pr) => pr.api_id == player.api_id);
-                if (duplicate) {
+                if (duplicate == undefined) {
                     logger.error("duplicate disappeared! please investigate, ignoring for now…");
                     return;
                 }
