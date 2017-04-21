@@ -223,6 +223,10 @@ function flatten(obj) {
                 // when player objects end up in the same batch
                 const duplicate = player_records_direct.find(
                     (pr) => pr.api_id == player.api_id);
+                if (duplicate) {
+                    console.error("duplicate disappeared! please investigate, ignoring for now…");
+                    return;
+                }
                 if (duplicate.created_at < player.created_at) {
                     // replace by newer one as below
                     player_records_direct.splice(
