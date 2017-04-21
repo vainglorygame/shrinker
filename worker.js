@@ -389,7 +389,6 @@ function flatten(obj) {
         // now access db
         try {
             // upsert whole batch in parallel
-            await seq.query("SET unique_checks=0");
             logger.info("inserting batch into db");
             await seq.transaction({ autocommit: false }, async (transaction) => {
                 await Promise.all([
@@ -447,7 +446,6 @@ function flatten(obj) {
                     )
                 ])
             });
-            await seq.query("SET unique_checks=1");
 
             logger.info("acking batch", { size: msgs.size });
             for (let msg of msgs)
