@@ -216,6 +216,11 @@ function flatten(obj) {
         // no race conditions within one batch
         await Promise.each(player_objects, async (p) => {
             const player = flatten(p);
+            if (player == undefined) {
+                logger.error("this player object is fucked up, ignoring",
+                    { player: p, processed: player });
+                return;
+            }
             if (processed_players.has(player.api_id)) {
                 logger.warn("got player in additional region",
                     { name: player.name, region: player.shard_id });
@@ -224,7 +229,7 @@ function flatten(obj) {
                 const duplicate = player_records_direct.find(
                     (pr) => pr.api_id == player.api_id);
                 if (duplicate) {
-                    console.error("duplicate disappeared! please investigate, ignoring for now…");
+                    logger.error("duplicate disappeared! please investigate, ignoring for now…");
                     return;
                 }
                 if (duplicate.created_at < player.created_at) {
