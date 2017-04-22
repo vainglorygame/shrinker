@@ -99,6 +99,7 @@ function flatten(obj) {
     }
 
     model = require("../orm/model")(seq, Seq);
+    //await seq.sync({ force: true });
 
     let load_timer = undefined,
         idle_timer = undefined,
@@ -207,8 +208,7 @@ function flatten(obj) {
             participant_stats_records = [],
             player_records = [],
             player_records_direct = [],  // via `/players`
-            asset_records = [],
-            participant_item_records = [];
+            asset_records = [];
 
         // populate `_records`
         // data from `/players`
@@ -307,23 +307,23 @@ function flatten(obj) {
                     participant.attributes.stats.jungleKills = participant.attributes.stats.jungleKills || 0;
 
                     // map items: names/id -> name -> db
-                    const item_use = (arr, action) =>
-                            arr.map((item, idx) => { return {
-                                number: idx,
-                                participant_api_id: participant.id,
-                                item_id: item_db_map[item_name_map[item]],
-                                action: action
-                            } }),
-                        item_arr_from_obj = (obj) =>
-                            [].concat(...  // 3 flatten
-                                Object.entries(obj).map(  // 1 map over (key, value)
-                                    (tuple) => Array(tuple[1]).fill(tuple[0])))  // 2 create Array [key] * value
+                    const item_id = ((i) => item_db_map[item_name_map[i]]);
                     let itms = [];
 
-                    itms = itms.concat(item_use(participant.attributes.stats.items, "final"));
-                    //itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemGrants), "grant"));
-                    //itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemUses), "use"));
-                    //itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemSells), "sell"));
+                    const pas = participant.attributes.stats;  // I'm lazy
+                    // csv
+                    participant.attributes.stats.items =
+                        pas.items.map((i) => item_id(i).toString()).join(",");
+                    // csv with count seperated by ;
+                    participant.attributes.stats.itemGrants =
+                        Object.keys(pas.itemGrants)
+                            .map((key) => item_id(key) + ";" + pas.itemGrants[key]).join(",");
+                    participant.attributes.stats.itemUses =
+                        Object.keys(pas.itemUses)
+                            .map((key) => item_id(key) + ";" + pas.itemUses[key]).join(",");
+                    participant.attributes.stats.itemSells =
+                        Object.keys(pas.itemSells)
+                            .map((key) => item_id(key) + ";" + pas.itemSells[key]).join(",");
 
                     // for debugging:
                     /*
@@ -339,9 +339,6 @@ function flatten(obj) {
                         .filter((i) => Object.keys(item_db_map).indexOf(item_name_map[i]) == -1);
                     if (items_missing_db.length > 0) console.error("missing name -> DB ID mapping for", items_missing_db);
                     */
-
-                    // redefine participant.items for our custom map
-                    participant.attributes.stats.participant_items = itms;
 
                     participant.player.attributes.shardId = participant.attributes.shardId;
                     participant.player = flatten(participant.player);
@@ -375,9 +372,6 @@ function flatten(obj) {
                         player_records.push(p.player);
                         notify_players_matches.add(p.player.name);
                     }
-                    p.participant_items.forEach((i) => {
-                        participant_item_records.push(i);
-                    });
                 });
             });
             match.assets.forEach((a) => {
@@ -480,8 +474,10 @@ function flatten(obj) {
         p_s.updated_at = new Date();
         p_s.created_at = new Date(Date.parse(match.created_at));
         p_s.created_at.setMinutes(p_s.created_at.getMinutes() + match.duration / 60);
-        // create CSV for items
-        p_s.items = participant.participant_items.map((i) => i.item_id.toString()).join(",");
+        p_s.items = participant.items;
+        p_s.item_grants = participant.item_grants;
+        p_s.item_uses = participant.item_uses;
+        p_s.item_sells = participant.item_sells;
         p.created_at = match.created_at;
         // mappings
         // hero names additionally need to be mapped old to new names
@@ -521,15 +517,6 @@ function flatten(obj) {
         // traits calculations
         if (roster.hero_kills == 0) p_s.kill_participation = 0;
         else p_s.kill_participation = (p_s.kills + p_s.assists) / roster.hero_kills;
-
-        /* example
-        p_s.sustain_score = participant.items.reduce((score, item) => {
-            // items[], itemGrants{}, itemUse{}, itemSells{} are the API objects
-            // old item names to clean names need to be mapped via `item_name_map[oldname]`
-            if (["Eve of Harvest", "Serpent Mask"].indexOf(item_name_map[item]) != -1)
-                return score + 20;
-            return score;
-        }, 0);*/
 
         return [p, p_s];
     }
