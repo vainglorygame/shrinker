@@ -468,14 +468,6 @@ function flatten(obj) {
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
     }
 
-    // based on an array of 2 by uints, convert to hex string
-    function items_to_hash(items) {
-        let hexstr = "";
-        items.forEach((i) =>
-            hexstr += ("000" + Number(i).toString(16)).slice(-4));  // pad for 2B
-        return hexstr;
-    }
-
     // Split participant API data into participant and participant_stats
     // Should not need to query db here.
     function calculate_participant_stats(match, roster, participant) {
@@ -488,9 +480,8 @@ function flatten(obj) {
         p_s.updated_at = new Date();
         p_s.created_at = new Date(Date.parse(match.created_at));
         p_s.created_at.setMinutes(p_s.created_at.getMinutes() + match.duration / 60);
-        p_s.items = seq.cast(seq.fn("UNHEX",
-            items_to_hash(participant.participant_items.map((i) =>
-                i.item_id))), "CHAR");
+        // create CSV for items
+        p_s.items = participant.participant_items.map((i) => i.item_id.toString()).join(",");
         p.created_at = match.created_at;
         // mappings
         // hero names additionally need to be mapped old to new names
