@@ -472,7 +472,7 @@ function flatten(obj) {
     function items_to_hash(items) {
         let hexstr = "";
         items.forEach((i) =>
-            hexstr += ("0" + Number(i).toString(16)).slice(-4));  // pad for 2B
+            hexstr += ("000" + Number(i).toString(16)).slice(-4));  // pad for 2B
         return hexstr;
     }
 
