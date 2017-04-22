@@ -85,7 +85,7 @@ function flatten(obj) {
     while (true) {
         try {
             seq = new Seq(DATABASE_URI, {
-                logging: false,
+                //logging: false,
                 max: 10
             });
             rabbit = await amqp.connect(RABBITMQ_URI, { heartbeat: 120 });
@@ -321,9 +321,9 @@ function flatten(obj) {
                     let itms = [];
 
                     itms = itms.concat(item_use(participant.attributes.stats.items, "final"));
-                    itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemGrants), "grant"));
-                    itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemUses), "use"));
-                    itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemSells), "sell"));
+                    //itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemGrants), "grant"));
+                    //itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemUses), "use"));
+                    //itms = itms.concat(item_use(item_arr_from_obj(participant.attributes.stats.itemSells), "sell"));
 
                     // for debugging:
                     /*
@@ -391,7 +391,7 @@ function flatten(obj) {
             // upsert whole batch in parallel
             logger.info("inserting batch into db");
             await seq.transaction({ autocommit: false }, async (transaction) => {
-                await Promise.all([
+                return Promise.all([
                     Promise.map(chunks(match_records), async (m_r) =>
                         model.Match.bulkCreate(m_r, {
                             ignoreDuplicates: true,  // should not happen
