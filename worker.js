@@ -18,6 +18,7 @@ const RABBITMQ_URI = process.env.RABBITMQ_URI,
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 5 * (50 + 1),
     // maximum number of elements to be inserted in one statement
     CHUNKSIZE = parseInt(process.env.CHUNKSIZE) || 100,
+    MAXCONNS = parseInt(process.env.MAXCONNS) || 10,  // how many concurrent actions
     LOAD_TIMEOUT = parseFloat(process.env.LOAD_TIMEOUT) || 5000, // ms
     IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 700;  // ms
 
@@ -85,8 +86,8 @@ function flatten(obj) {
     while (true) {
         try {
             seq = new Seq(DATABASE_URI, {
-                //logging: false,
-                max: 10
+                logging: false,
+                max: MAXCONNS
             });
             rabbit = await amqp.connect(RABBITMQ_URI, { heartbeat: 120 });
             ch = await rabbit.createChannel();
@@ -385,54 +386,52 @@ function flatten(obj) {
             // upsert whole batch in parallel
             logger.info("inserting batch into db");
             await seq.transaction({ autocommit: false }, async (transaction) => {
-                return Promise.all([
-                    Promise.map(chunks(match_records), async (m_r) =>
-                        model.Match.bulkCreate(m_r, {
-                            ignoreDuplicates: true,  // should not happen
-                            transaction: transaction
-                        })
-                    ),
-                    Promise.map(chunks(roster_records), async (r_r) =>
-                        model.Roster.bulkCreate(r_r, {
-                            ignoreDuplicates: true,
-                            transaction: transaction
-                        })
-                    ),
-                    Promise.map(chunks(participant_records), async (p_r) =>
-                        model.Participant.bulkCreate(p_r, {
-                            ignoreDuplicates: true,
-                            transaction: transaction
-                        })
-                    ),
-                    Promise.map(chunks(participant_stats_records), async (p_s_r) =>
-                        model.ParticipantStats.bulkCreate(p_s_r, {
-                            ignoreDuplicates: true,
-                            transaction: transaction
-                        })
-                    ),
-                    Promise.map(chunks(player_records), async (pl_r) =>
-                        model.Player.bulkCreate(pl_r, {
-                            ignoreDuplicates: true,
-                            transaction: transaction
-                        })
-                    ),
-                    Promise.map(chunks(player_records_direct), async (p_r_d) =>
-                        model.Player.bulkCreate(player_records_direct, {
-                            // if set to [] (all), upsert messes with autoincrement
-                            updateOnDuplicate: [
-                                "shard_id", "api_id", "name", "last_update",
-                                "created_at", "level", "xp", "lifetime_gold"
-                            ],
-                            transaction: transaction
-                        })
-                    ),
-                    Promise.map(chunks(asset_records), async (a_r) =>
-                        model.Asset.bulkCreate(a_r, {
-                            ignoreDuplicates: true,
-                            transaction: transaction
-                        })
-                    )
-                ])
+                await Promise.map(chunks(match_records), async (m_r) =>
+                    model.Match.bulkCreate(m_r, {
+                        ignoreDuplicates: true,  // should not happen
+                        transaction: transaction
+                    }), { concurrency: MAXCONNS }
+                );
+                await Promise.map(chunks(roster_records), async (r_r) =>
+                    model.Roster.bulkCreate(r_r, {
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }), { concurrency: MAXCONNS }
+                );
+                await Promise.map(chunks(participant_records), async (p_r) =>
+                    model.Participant.bulkCreate(p_r, {
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }), { concurrency: MAXCONNS }
+                );
+                await Promise.map(chunks(participant_stats_records), async (p_s_r) =>
+                    model.ParticipantStats.bulkCreate(p_s_r, {
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }), { concurrency: MAXCONNS }
+                );
+                await Promise.map(chunks(player_records), async (pl_r) =>
+                    model.Player.bulkCreate(pl_r, {
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }), { concurrency: MAXCONNS }
+                );
+                await Promise.map(chunks(player_records_direct), async (p_r_d) =>
+                    model.Player.bulkCreate(player_records_direct, {
+                        // if set to [] (all), upsert messes with autoincrement
+                        updateOnDuplicate: [
+                            "shard_id", "api_id", "name", "last_update",
+                            "created_at", "level", "xp", "lifetime_gold"
+                        ],
+                        transaction: transaction
+                    }), { concurrency: MAXCONNS }
+                );
+                await Promise.map(chunks(asset_records), async (a_r) =>
+                    model.Asset.bulkCreate(a_r, {
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }), { concurrency: MAXCONNS }
+                );
             });
 
             logger.info("acking batch", { size: msgs.size });
