@@ -432,12 +432,6 @@ function flatten(obj) {
                             transaction: transaction
                         })
                     ),
-                    Promise.map(chunks(participant_item_records), async (p_i_r) =>
-                        model.ItemParticipant.bulkCreate(p_i_r, {
-                            ignoreDuplicates: true,
-                            transaction: transaction
-                        })
-                    ),
                     Promise.map(chunks(asset_records), async (a_r) =>
                         model.Asset.bulkCreate(a_r, {
                             ignoreDuplicates: true,
@@ -474,6 +468,14 @@ function flatten(obj) {
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
     }
 
+    // based on an array of 2 by uints, convert to hex string
+    function items_to_hash(items) {
+        let hexstr = "";
+        items.forEach((i) =>
+            hexstr += ("0" + Number(i).toString(16)).slice(-4));  // pad for 2B
+        return hexstr;
+    }
+
     // Split participant API data into participant and participant_stats
     // Should not need to query db here.
     function calculate_participant_stats(match, roster, participant) {
@@ -486,7 +488,9 @@ function flatten(obj) {
         p_s.updated_at = new Date();
         p_s.created_at = new Date(Date.parse(match.created_at));
         p_s.created_at.setMinutes(p_s.created_at.getMinutes() + match.duration / 60);
-        p.participant_items = participant.participant_items;
+        p_s.items = seq.cast(seq.fn("UNHEX",
+            items_to_hash(participant.participant_items.map((i) =>
+                i.item_id))), "CHAR");
         p.created_at = match.created_at;
         // mappings
         // hero names additionally need to be mapped old to new names
