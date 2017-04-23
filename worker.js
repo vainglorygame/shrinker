@@ -371,8 +371,9 @@ function flatten(obj) {
                     if (!processed_players.has(p.player.api_id)) {
                         processed_players.add(p.player.api_id);
                         player_records.push(p.player);
-                        notify_players_matches.add(p.player.name);
                     }
+                    if (!notify_players_matches.has(p.player_name))
+                        notify_players_matches.add(p.player.name);
                 });
             });
             match.assets.forEach((a) => {
