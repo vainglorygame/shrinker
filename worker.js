@@ -478,6 +478,7 @@ function flatten(obj) {
         p_s.item_grants = participant.item_grants;
         p_s.item_uses = participant.item_uses;
         p_s.item_sells = participant.item_sells;
+        p_s.duration = match.duration;
         p.created_at = match.created_at;
         // mappings
         // hero names additionally need to be mapped old to new names
