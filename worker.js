@@ -13,6 +13,7 @@ const amqp = require("amqplib"),
 
 const RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
+    QUEUE = process.env.QUEUE || "process",
     LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
     // matches + players, 5 players with 50 matches as default
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 5 * (50 + 1),
@@ -36,7 +37,7 @@ if (LOGGLY_TOKEN)
     logger.add(winston.transports.Loggly, {
         inputToken: LOGGLY_TOKEN,
         subdomain: "kvahuja",
-        tags: ["backend", "processor"],
+        tags: ["backend", "processor", QUEUE],
         json: true
     });
 
@@ -91,7 +92,7 @@ function flatten(obj) {
             });
             rabbit = await amqp.connect(RABBITMQ_URI, { heartbeat: 120 });
             ch = await rabbit.createChannel();
-            await ch.assertQueue("process", {durable: true});
+            await ch.assertQueue(QUEUE, {durable: true});
             break;
         } catch (err) {
             logger.error("Error connecting", err);
@@ -100,7 +101,7 @@ function flatten(obj) {
     }
 
     model = require("../orm/model")(seq, Seq);
-    //await seq.sync({ force: true });
+    //await seq.sync();
 
     let load_timer = undefined,
         idle_timer = undefined,
@@ -145,7 +146,7 @@ function flatten(obj) {
         match_data = new Set(),
         msg_buffer = new Set();
 
-    ch.consume("process", async (msg) => {
+    ch.consume(QUEUE, async (msg) => {
         if (msg.properties.type == "player") {
             // apigrabber sends an array
             player_data.add(...JSON.parse(msg.content));
