@@ -2,18 +2,25 @@
 /* jshint esnext:true */
 "use strict";
 
+/* processor inserts API data into the database.
+ * It listens to the queue `process` and expects a JSON
+ * which is a match structure or a player structure.
+ * It will forward notifications to web and to cruncher.
+ */
+
 const amqp = require("amqplib"),
+    Promise = require("bluebird"),
     winston = require("winston"),
     loggly = require("winston-loggly-bulk"),
     Seq = require("sequelize"),
     item_name_map = require("../orm/items"),
     hero_name_map = require("../orm/heroes"),
-    Promise = require("bluebird"),
     sleep = require("sleep-promise");
 
 const RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     QUEUE = process.env.QUEUE || "process",
+    CRUNCH_QUEUE = process.env.CRUNCH_QUEUE || "crunch",
     LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
     // matches + players, 5 players with 50 matches as default
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 5 * (50 + 1),
@@ -48,6 +55,7 @@ function camelToSnake(text) {
         $1 + "_" + $2.toLowerCase());
 }
 
+// MadGlory API uses snakeCase, our db uses camel_case
 function snakeCaseKeys(obj) {
     Object.keys(obj).forEach((key) => {
         const new_key = camelToSnake(key);
@@ -84,6 +92,7 @@ function flatten(obj) {
 (async () => {
     let seq, model, rabbit, ch;
 
+    // connect to rabbit & db
     while (true) {
         try {
             seq = new Seq(DATABASE_URI, {
@@ -103,10 +112,12 @@ function flatten(obj) {
     model = require("../orm/model")(seq, Seq);
     //await seq.sync();
 
+    // performance logging
     let load_timer = undefined,
         idle_timer = undefined,
         profiler = undefined;
 
+    // Maps to quickly convert API names to db ids
     let item_db_map = new Map(),      // "Halcyon Potion" to id
         hero_db_map = new Map(),      // "*SAW*" to id
         series_db_map = new Map(),    // date to series id
@@ -114,6 +125,7 @@ function flatten(obj) {
         role_db_map = new Map(),      // "captain" to id
         hero_role_map = new Map();    // SAW.id to "carry"
 
+    // populate maps
     await Promise.all([
         model.Item.findAll()
             .map((item) => item_db_map[item.name] = item.id),
@@ -142,6 +154,8 @@ function flatten(obj) {
     // server sends as long as there are less than `prefetch` unACKed
     await ch.prefetch(BATCHSIZE);
 
+    // buffers that will be filled until BATCHSIZE is reached
+    // to make db transactions more efficient
     let player_data = new Set(),
         match_data = new Set(),
         msg_buffer = new Set();
@@ -155,13 +169,11 @@ function flatten(obj) {
         if (msg.properties.type == "match") {
             // apigrabber sends a single object
             const match = JSON.parse(msg.content);
-            if (await model.Match.count({
-                where: { api_id: match.id }
-            }) > 0) {
+            // deduplicate and reject immediately
+            if (await model.Match.count({ where: { api_id: match.id } }) > 0) {
                 await ch.nack(msg, false, false);  // discard
                 return;
-            } else
-                match_data.add(match);
+            } else match_data.add(match);
             msg_buffer.add(msg);
         }
 
@@ -180,6 +192,7 @@ function flatten(obj) {
             await process();
     }, { noAck: false });
 
+    // finish a whole batch
     async function process() {
         profiler.done("buffer filled");
         profiler = undefined;
@@ -199,7 +212,7 @@ function flatten(obj) {
         match_data.clear();
         msg_buffer.clear();
 
-        let processed_players = new Set(), // to sort out duplicates
+        const processed_players = new Set(), // to sort out duplicates
             notify_players_matches = new Set(),  // players with new matches
             notify_players_stats = new Set();  // players with new stats
 
@@ -231,7 +244,7 @@ function flatten(obj) {
                 const duplicate = player_records_direct.find(
                     (pr) => pr.api_id == player.api_id);
                 if (duplicate == undefined) {
-                    logger.error("duplicate disappeared! please investigate, ignoring for now…");
+                    logger.error("duplicate disappeared! please investigate, ignoring for now…", player);
                     return;
                 }
                 if (duplicate.created_at < player.created_at) {
@@ -274,8 +287,8 @@ function flatten(obj) {
 
         // reject invalid matches (handling API bugs)
         match_objects.forEach((match, idx) => {
-            if (match.rosters[0].id == "null")
-                delete match_objects[idx];
+            // it is really `"null"`.
+            if (match.rosters[0].id == "null") delete match_objects[idx];
         });
 
         // data from `/matches`
@@ -390,7 +403,7 @@ function flatten(obj) {
             await seq.transaction({ autocommit: false }, async (transaction) => {
                 await Promise.map(chunks(match_records), async (m_r) =>
                     model.Match.bulkCreate(m_r, {
-                        ignoreDuplicates: true,  // should not happen
+                        ignoreDuplicates: true,  // if this happens, something is wrong
                         transaction: transaction
                     }), { concurrency: MAXCONNS }
                 );
@@ -437,30 +450,33 @@ function flatten(obj) {
             });
 
             logger.info("acking batch", { size: msgs.size });
-            for (let msg of msgs)
-                await ch.ack(msg);
+            await Promise.map(msgs, async (m) => await ch.ack(m));
         } catch (err) {
             // this should only happen for Deadlocks in prod
             // it *must not* fail due to broken schema or missing dependency
             // TODO: eliminate such cases earlier in the chain
             // and immediately NACK those broken matches, requeueing only the rest
             logger.error("SQL error", err);
-            for (let msg of msgs)
-                await ch.nack(msg, false, true);
+            await Promise.map(msgs, async (m) => await ch.nack(m, false, true));
             return;  // give up
         }
         transaction_profiler.done("database transaction");
 
         // notify web
         // …about new matches
-        for (let name of notify_players_matches)
-            await ch.publish("amq.topic", "player." + name, new Buffer("matches_update"));
+        await Promise.map(notify_players_matches, async (name) =>
+            await ch.publish("amq.topic", "player." + name, new Buffer("matches_update")));
         // …about updated lifetime stats
-        for (let name of notify_players_stats)
-            await ch.publish("amq.topic", "player." + name, new Buffer("stats_update"));
+        await Promise.map(notify_players_stats, async (name) =>
+            await ch.publish("amq.topic", "player." + name, new Buffer("stats_update")));
         // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
+        // update stats
+        if (CRUNCH_QUEUE != undefined && participant_records.length > 0)
+            await Promise.map(participant_records, async (p_r) =>
+                await ch.sendToQueue(CRUNCH_QUEUE, new Buffer(p_r.api_id),
+                    { persistent: true, type: "global" }));
     }
 
     // Split participant API data into participant and participant_stats
@@ -469,6 +485,7 @@ function flatten(obj) {
         let p_s = {},  // participant_stats_record
             p = {};  // participant_record
 
+        // copy all values that are required in db `participant` to `p`/`p_s` here
         // meta
         p_s.participant_api_id = participant.api_id;
         p_s.final = true;  // these are the stats at the end of the match
@@ -488,8 +505,10 @@ function flatten(obj) {
         // TODO don't hardcode this, waiting for `match.patch_version` to be available
         if (p_s.created_at < new Date("2017-03-28"))
             p.series_id = series_db_map["Patch 2.2"];
-        else
+        else if (p_s.created_at < new Date("2017-04-26"))
             p.series_id = series_db_map["Patch 2.3"];
+        else
+            p.series_id = series_db_map["Patch 2.4"];
         p.game_mode_id = game_mode_db_map[match.game_mode];
         p.role_id = role_db_map[classify_role(p)];
 
@@ -512,7 +531,7 @@ function flatten(obj) {
                 p_s[attr] = participant[attr]);
 
         // score calculations
-        var impact_score = -0.28779906 + (p_s.kills * 0.22290324) + (p_s.deaths * -0.50438917) + (p_s.assists * 0.34841597);
+        let impact_score = -0.28779906 + (p_s.kills * 0.22290324) + (p_s.deaths * -0.50438917) + (p_s.assists * 0.34841597);
         p_s.impact_score = (impact_score + 10) / (10 + 10);
 
 
@@ -524,7 +543,12 @@ function flatten(obj) {
     }
 
     // return "captain" "carry" "jungler"
+    // TODO base this on traits
     function classify_role(participant) {
         return hero_role_map[participant.hero_id];
     }
 })();
+
+process.on("unhandledRejection", function(reason, promise) {
+    logger.error(reason);
+});
