@@ -5,7 +5,7 @@
 /* processor inserts API data into the database.
  * It listens to the queue `process` and expects a JSON
  * which is a match structure or a player structure.
- * It will forward notifications to web and to cruncher.
+ * It will forward notifications to web.
  */
 
 const amqp = require("amqplib"),
@@ -20,7 +20,6 @@ const amqp = require("amqplib"),
 const RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     QUEUE = process.env.QUEUE || "process",
-    CRUNCH_QUEUE = process.env.CRUNCH_QUEUE || "crunch",
     LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
     // matches + players, 5 players with 50 matches as default
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 5 * (50 + 1),
@@ -472,11 +471,6 @@ function flatten(obj) {
         // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
-        // update stats
-        if (CRUNCH_QUEUE != undefined && participant_records.length > 0)
-            await Promise.map(participant_records, async (p_r) =>
-                await ch.sendToQueue(CRUNCH_QUEUE, new Buffer(p_r.api_id),
-                    { persistent: true, type: "global" }));
     }
 
     // Split participant API data into participant and participant_stats
