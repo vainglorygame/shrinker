@@ -129,15 +129,7 @@ function flatten(obj) {
         model.Item.findAll()
             .map((item) => item_db_map[item.name] = item.id),
         model.Hero.findAll()
-            .map((hero) => {
-                hero_db_map[hero.name] = hero.id;
-                if (hero.is_carry)
-                    hero_role_map[hero.id] = "carry";
-                if (hero.is_jungler)
-                    hero_role_map[hero.id] = "jungler";
-                if (hero.is_captain)
-                    hero_role_map[hero.id] = "captain";
-            }),
+            .map((hero) => hero_db_map[hero.name] = hero.id),
         model.Series.findAll()
             .map((series) => {
                 if (series.dimension_on == "player")
@@ -528,7 +520,6 @@ function flatten(obj) {
         let impact_score = -0.28779906 + (p_s.kills * 0.22290324) + (p_s.deaths * -0.50438917) + (p_s.assists * 0.34841597);
         p_s.impact_score = (impact_score + 10) / (10 + 10);
 
-
         // traits calculations
         if (roster.hero_kills == 0) p_s.kill_participation = 0;
         else p_s.kill_participation = (p_s.kills + p_s.assists) / roster.hero_kills;
@@ -537,9 +528,13 @@ function flatten(obj) {
     }
 
     // return "captain" "carry" "jungler"
-    // TODO base this on traits
     function classify_role(participant) {
-        return hero_role_map[participant.hero_id];
+        const is_captain_score = 2.34365487 + (-0.06188674 * participant.non_jungle_minion_kills) + (-0.10575069 * participant.jungle_kills),  // about 88% accurate, trained on Hero.is_captain
+            is_carry_score = -1.88524473 + (0.05593593 * participant.non_jungle_minion_kills) + (-0.0881661 * participant.jungle_kills),  // about 90% accurate, trained on Hero.is_carry
+            is_jungle_score = -0.78327066 + (-0.03324596 * participant.non_jungle_minion_kills) + (0.10514832 * participant.jungle_kills),  // about 88% accurate
+            scores = [is_captain_score, is_carry_score, is_jungle_score];
+
+        return ["captain", "carry", "jungler"][scores.indexOf(Math.max(...scores))];
     }
 })();
 
