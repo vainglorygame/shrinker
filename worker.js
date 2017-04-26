@@ -496,7 +496,6 @@ function flatten(obj) {
         else
             p.series_id = series_db_map["Patch 2.4"];
         p.game_mode_id = game_mode_db_map[match.game_mode];
-        p.role_id = role_db_map[classify_role(p)];
 
         // attributes to copy from API to participant
         // these don't change over the duration of the match
@@ -520,6 +519,9 @@ function flatten(obj) {
         let impact_score = -0.28779906 + (p_s.kills * 0.22290324) + (p_s.deaths * -0.50438917) + (p_s.assists * 0.34841597);
         p_s.impact_score = (impact_score + 10) / (10 + 10);
 
+        // classifications
+        p.role_id = role_db_map[classify_role(p_s)];
+
         // traits calculations
         if (roster.hero_kills == 0) p_s.kill_participation = 0;
         else p_s.kill_participation = (p_s.kills + p_s.assists) / roster.hero_kills;
@@ -528,11 +530,10 @@ function flatten(obj) {
     }
 
     // return "captain" "carry" "jungler"
-    function classify_role(participant) {
-        const is_captain_score = 2.34365487 + (-0.06188674 * participant.non_jungle_minion_kills) + (-0.10575069 * participant.jungle_kills),  // about 88% accurate, trained on Hero.is_captain
-            is_carry_score = -1.88524473 + (0.05593593 * participant.non_jungle_minion_kills) + (-0.0881661 * participant.jungle_kills),  // about 90% accurate, trained on Hero.is_carry
-            is_jungle_score = -0.78327066 + (-0.03324596 * participant.non_jungle_minion_kills) + (0.10514832 * participant.jungle_kills),  // about 88% accurate
-            scores = [is_captain_score, is_carry_score, is_jungle_score];
+    function classify_role(participant_stats) {
+        const is_captain_score = 2.34365487 + (-0.06188674 * participant_stats.non_jungle_minion_kills) + (-0.10575069 * participant_stats.jungle_kills),  // about 88% accurate, trained on Hero.is_captain
+            is_carry_score = -1.88524473 + (0.05593593 * participant_stats.non_jungle_minion_kills) + (-0.0881661 * participant_stats.jungle_kills),  // about 90% accurate, trained on Hero.is_carry
+            is_jungle_score = -0.78327066 + (-0.03324596 * participant_stats.non_jungle_minion_kills) + (0.10514832 * participant_stats.jungle_kills);  // about 88% accurate
         if (is_captain_score > is_carry_score && is_captain_score > is_jungle_score)
             return "captain";
         if (is_carry_score > is_jungle_score)
