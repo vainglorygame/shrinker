@@ -533,8 +533,11 @@ function flatten(obj) {
             is_carry_score = -1.88524473 + (0.05593593 * participant.non_jungle_minion_kills) + (-0.0881661 * participant.jungle_kills),  // about 90% accurate, trained on Hero.is_carry
             is_jungle_score = -0.78327066 + (-0.03324596 * participant.non_jungle_minion_kills) + (0.10514832 * participant.jungle_kills),  // about 88% accurate
             scores = [is_captain_score, is_carry_score, is_jungle_score];
-
-        return ["captain", "carry", "jungler"][scores.indexOf(Math.max(...scores))];
+        if (is_captain_score > is_carry_score && is_captain_score > is_jungle_score)
+            return "captain";
+        if (is_carry_score > is_jungle_score)
+            return "carry";
+        return "jungler";
     }
 })();
 
