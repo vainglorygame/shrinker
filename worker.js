@@ -488,13 +488,15 @@ function flatten(obj) {
         // hero names additionally need to be mapped old to new names
         // (Sayoc = Taka)
         p.hero_id = hero_db_map[hero_name_map[participant.actor]];
-        // TODO don't hardcode this, waiting for `match.patch_version` to be available
-        if (p_s.created_at < new Date("2017-03-28T15:00:00"))
-            p.series_id = series_db_map["Patch 2.2"];
-        else if (p_s.created_at < new Date("2017-04-26T15:00:00"))
-            p.series_id = series_db_map["Patch 2.3"];
-        else
-            p.series_id = series_db_map["Patch 2.4"];
+        if (match.patch_version != "")
+            p.series_id = series_db_map["Patch " + match.patch_version];
+        else {
+            if (p_s.created_at < new Date("2017-03-28T15:00:00"))
+                p.series_id = series_db_map["Patch 2.2"];
+            else if (p_s.created_at < new Date("2017-04-26T15:00:00"))
+                p.series_id = series_db_map["Patch 2.3"];
+            else p.series_id = series_db_map["Patch 2.4"];
+        }
         p.game_mode_id = game_mode_db_map[match.game_mode];
 
         // attributes to copy from API to participant
