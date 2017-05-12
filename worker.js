@@ -109,7 +109,6 @@ function flatten(obj) {
     }
 
     model = require("../orm/model")(seq, Seq);
-    //await seq.sync();
 
     // performance logging
     let load_timer = undefined,
@@ -153,8 +152,8 @@ function flatten(obj) {
 
     ch.consume(QUEUE, async (msg) => {
         if (msg.properties.type == "player") {
-            // apigrabber sends an array
-            player_data.add(...JSON.parse(msg.content));
+            // bridge sends a single object
+            player_data.add(JSON.parse(msg.content));
             msg_buffer.add(msg);
         }
         if (msg.properties.type == "match") {
@@ -164,7 +163,8 @@ function flatten(obj) {
             if (await model.Match.count({ where: { api_id: match.id } }) > 0) {
                 await ch.nack(msg, false, false);  // discard
                 return;
-            } else match_data.add(match);
+            }
+            match_data.add(match);
             msg_buffer.add(msg);
         }
 
@@ -203,9 +203,7 @@ function flatten(obj) {
         match_data.clear();
         msg_buffer.clear();
 
-        const processed_players = new Set(), // to sort out duplicates
-            notify_players_matches = new Set(),  // players with new matches
-            notify_players_stats = new Set();  // players with new stats
+        const processed_players = new Set(); // to sort out duplicates
 
         // aggregate record objects to do a bulk insert
         let match_records = [],
@@ -222,22 +220,12 @@ function flatten(obj) {
         // no race conditions within one batch
         await Promise.each(player_objects, async (p) => {
             const player = flatten(p);
-            if (player == undefined) {
-                logger.error("this player object is fucked up, ignoring",
-                    { player: p, processed: player });
-                return;
-            }
             if (processed_players.has(player.api_id)) {
+                // duplicate within one batch
                 logger.warn("got player in additional region",
                     { name: player.name, region: player.shard_id });
-                // see below, this is handling region changes
-                // when player objects end up in the same batch
-                const duplicate = player_records_direct.find(
-                    (pr) => pr.api_id == player.api_id);
-                if (duplicate == undefined) {
-                    logger.error("duplicate disappeared! please investigate, ignoring for now…", player);
-                    return;
-                }
+                const duplicate = player_records_direct.find((pr) =>
+                    pr.api_id == player.api_id);
                 if (duplicate.created_at < player.created_at) {
                     // replace by newer one as below
                     player_records_direct.splice(
@@ -255,28 +243,24 @@ function flatten(obj) {
             player.last_update = seq.fn("NOW");
             logger.info("processing player",
                 { name: player.name, region: player.shard_id });
+            // duplicate in batch and db
             // check whether there is a player in db
             // that has a more recent `created_at`
             // this is only the case with region changes
-            const count = await model.Player.count({
-                where: {
-                    api_id: player.api_id,
-                    created_at: {
-                        // equal: just update last_update
-                        $gt: player.created_at
-                    }
-                }});
+            const count = await model.Player.count({ where: {
+                api_id: player.api_id,
+                created_at: {
+                    $gt: player.created_at // equal: just update last_update
+                }
+            }});
             if (count > 0) {
                 logger.warn("ignoring player who seems to have switched from region",
                     { name: player.name, region: player.shard_id });
                 return;
-            } else {
-                player_records_direct.push(player);
-                notify_players_stats.add(player.name);
-            }
+            } else player_records_direct.push(player);
         });
 
-        // reject invalid matches (handling API bugs)
+        // reject invalid matches (handling API bugs) TODO should happen in apigrabber
         match_objects.forEach((match, idx) => {
             // it is really `"null"`.
             if (match.rosters[0].id == "null") delete match_objects[idx];
@@ -288,7 +272,8 @@ function flatten(obj) {
             // also, push missing fields
             match.rosters = match.rosters.map((roster) => {
                 roster.matchApiId = match.id;
-                roster.attributes.shardId = match.attributes.shardId;
+                // TODO backwards compatibility, all objects have shardId since May 10th
+                roster.attributes.shardId = roster.attributes.shardId || match.attributes.shardId;
                 roster.createdAt = match.createdAt;
                 // TODO API workaround: roster does not have `winner`
                 if (roster.participants.length > 0)
@@ -298,7 +283,7 @@ function flatten(obj) {
 
                 roster.participants = roster.participants.map((participant) => {
                     // ! attributes added here need to be added via `calculate_participant_stats` too
-                    participant.attributes.shardId = roster.attributes.shardId;
+                    participant.attributes.shardId = participant.attributes.shardId || roster.attributes.shardId;
                     participant.rosterApiId = roster.id;
                     participant.matchApiId = match.id;
                     participant.createdAt = roster.createdAt;
@@ -331,22 +316,7 @@ function flatten(obj) {
                         Object.keys(pas.itemSells)
                             .map((key) => item_id(key) + ";" + pas.itemSells[key]).join(",");
 
-                    // for debugging:
-                    /*
-                    let items_missing_name = [].concat(...
-                        Object.keys(participant.attributes.stats.itemGrants),
-                        participant.attributes.stats.items)
-                        .filter((i) => Object.keys(item_name_map).indexOf(i) == -1);
-                    if (items_missing_name.length > 0) console.error("missing API name -> name mapping for", items_missing_name);
-
-                    let items_missing_db = [].concat(...
-                        Object.keys(participant.attributes.stats.itemGrants),
-                        participant.attributes.stats.items)
-                        .filter((i) => Object.keys(item_db_map).indexOf(item_name_map[i]) == -1);
-                    if (items_missing_db.length > 0) console.error("missing name -> DB ID mapping for", items_missing_db);
-                    */
-
-                    participant.player.attributes.shardId = participant.attributes.shardId;
+                    participant.player.attributes.shardId = participant.player.attributes.shardId || participant.attributes.shardId;
                     participant.player = flatten(participant.player);
                     return flatten(participant);
                 });
@@ -354,14 +324,12 @@ function flatten(obj) {
             });
             match.assets = match.assets.map((asset) => {
                 asset.matchApiId = match.id;
-                asset.attributes.shardId = match.attributes.shardId;
+                asset.attributes.shardId = asset.attributes.shardId || match.attributes.shardId;
                 return flatten(asset);
             });
             match = flatten(match);
 
             // after conversion, create the array of records
-            // there is a low chance of a match being duplicated in a batch,
-            // skip it and its children
             match_records.push(match);
             match.rosters.forEach((r) => {
                 roster_records.push(r);
@@ -377,13 +345,9 @@ function flatten(obj) {
                         processed_players.add(p.player.api_id);
                         player_records.push(p.player);
                     }
-                    if (!notify_players_matches.has(p.player_name))
-                        notify_players_matches.add(p.player.name);
                 });
             });
-            match.assets.forEach((a) => {
-                asset_records.push(a);
-            });
+            match.assets.forEach((a) => asset_records.push(a));
         });
 
         let transaction_profiler = logger.startTimer();
@@ -455,11 +419,17 @@ function flatten(obj) {
 
         // notify web
         // …about new matches
-        await Promise.map(notify_players_matches, async (name) =>
-            await ch.publish("amq.topic", "player." + name, new Buffer("matches_update")));
-        // …about updated lifetime stats
-        await Promise.map(notify_players_stats, async (name) =>
-            await ch.publish("amq.topic", "player." + name, new Buffer("stats_update")));
+        await Promise.map(msgs, async (m) => {
+            if (m.properties.headers.notify == undefined) return;
+            let notif = "error";
+            // new match
+            if (m.properties.type == "match") notif = "matches_update";
+            // player obj updated
+            if (m.properties.type == "player") notif = "stats_update";
+
+            await ch.publish("amq.topic", m.properties.headers.notify,
+                new Buffer(notif));
+        });
         // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
