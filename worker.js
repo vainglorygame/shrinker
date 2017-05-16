@@ -404,6 +404,7 @@ function flatten(obj) {
                     kills: telemetry.data.filter((ev) =>
                         ev.actor == p
                         && ev.type == "KillActor"
+                        && ev.TargetIsHero
                     ).length,
                     deaths: telemetry.data.filter((ev) =>
                         ev.target == p
