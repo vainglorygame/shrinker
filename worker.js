@@ -381,20 +381,27 @@ function flatten(obj) {
             } });
             // link participant <-> Telemetry actor/target
             telemetry.data.forEach((t) => {
-                // participant does stuff
+                // participant kills
                 if (t.payload.Actor != undefined
                     && [undefined, 1].indexOf(t.payload.IsHero) != -1
                     && t.payload.Team != undefined)
                     t.actor = participants.filter((p) =>
                         p.actor == t.payload.Actor
                         && p.team == t.payload.Team)[0];
-                // stuff done to participant
+                // ability targets
                 if (t.payload.TargetActor != undefined
                     && [undefined, 1].indexOf(t.payload.TargetIsHero) != -1
                     && t.payload.Team != undefined)
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.TargetActor
                         && p.team != t.payload.Team)[0];
+                // participant killed
+                if (t.payload.Killed != undefined
+                    && t.payload.TargetIsHero == 1
+                    && t.payload.KilledTeam != undefined)
+                    t.killed = participants.filter((p) =>
+                        p.actor == t.payload.Killed
+                        && p.team == t.payload.KilledTeam)[0];
             });
             const participants_phase = participants.map((p) => {
                 return {
@@ -403,12 +410,10 @@ function flatten(obj) {
                     end: telemetry.end,
                     kills: telemetry.data.filter((ev) =>
                         ev.actor == p
-                        && ev.type == "KillActor"
-                        && ev.TargetIsHero
+                        && ev.killed != undefined
                     ).length,
                     deaths: telemetry.data.filter((ev) =>
-                        ev.target == p
-                        && ev.type == "KillActor"
+                        ev.killed == p
                     ).length,
                     minion_kills: telemetry.data.filter((ev) =>
                         ev.actor == p
@@ -458,14 +463,14 @@ function flatten(obj) {
                         && (ev.payload.Target == "*Turret*"
                             || ev.payload.Target == "*VainTurret*")
                     ).length,
-                    hero_dps: telemetry.data.reduce((acc, ev) =>
+                    hero_damage_dealt: telemetry.data.reduce((acc, ev) =>
                         ev.actor == p
                         && ev.type == "DealDamage"
                         && ev.payload.TargetIsHero == 1
                         ? acc + ev.payload.Delt
                         : acc
                     , 0),
-                    non_hero_dps: telemetry.data.reduce((acc, ev) =>
+                    non_hero_damage_dealt: telemetry.data.reduce((acc, ev) =>
                         ev.actor == p
                         && ev.type == "DealDamage"
                         && ev.payload.TargetIsHero == 0
