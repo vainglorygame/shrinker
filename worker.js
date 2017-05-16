@@ -523,6 +523,7 @@ function flatten(obj) {
                         ev.actor == p
                         && ev.type == "DealDamage"
                         && ["*VainCrystalAway*",
+                            "*VainCrystalHome*",
                             "*JungleMinion_CrystalMiner*",
                             "*JungleMinion_GoldMiner*"
                         ].indexOf(ev.payload.Target) != -1
@@ -563,6 +564,7 @@ function flatten(obj) {
                         ev.actor == p
                         && ev.type == "DealDamage"
                         && ["*VainCrystalAway*",
+                            "*VainCrystalHome*",
                             "*JungleMinion_CrystalMiner*",
                             "*JungleMinion_GoldMiner*"
                         ].indexOf(ev.payload.Target) != -1
