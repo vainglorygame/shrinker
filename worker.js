@@ -148,6 +148,7 @@ function flatten(obj) {
     // to make db transactions more efficient
     let player_data = new Set(),
         match_data = new Set(),
+        telemetry_data = new Set(),
         msg_buffer = new Set();
 
     ch.consume(QUEUE, async (msg) => {
@@ -167,6 +168,10 @@ function flatten(obj) {
             match_data.add(match);
             msg_buffer.add(msg);
         }
+        if (msg.properties.type == "telemetry") {
+            telemetry_data.add(JSON.parse(msg.content));
+            msg_buffer.add(msg);
+        }
 
         // fill queue until batchsize or idle
         // for logging of the time between batch fill and batch process
@@ -179,7 +184,7 @@ function flatten(obj) {
             clearTimeout(idle_timer);
         idle_timer = setTimeout(process, IDLE_TIMEOUT);
         // maximum data pressure
-        if (match_data.size + player_data.size == BATCHSIZE)
+        if (match_data.size + player_data.size + telemetry_data.size == BATCHSIZE)
             await process();
     }, { noAck: false });
 
@@ -188,19 +193,24 @@ function flatten(obj) {
         profiler.done("buffer filled");
         profiler = undefined;
 
-        logger.info("processing batch",
-            { players: player_data.size, matches: match_data.size });
+        logger.info("processing batch", {
+            players: player_data.size,
+            matches: match_data.size,
+            telemetries: telemetry_data.size
+        });
 
         // clean up to allow processor to accept while we wait for db
         clearTimeout(idle_timer);
         clearTimeout(load_timer);
         const player_objects = new Set(player_data),
             match_objects = new Set(match_data),
+            telemetry_objects = new Set(telemetry_data),
             msgs = new Set(msg_buffer);
         idle_timer = undefined;
         load_timer = undefined;
         player_data.clear();
         match_data.clear();
+        telemetry_data.clear();
         msg_buffer.clear();
 
         const processed_players = new Set(); // to sort out duplicates
@@ -210,6 +220,7 @@ function flatten(obj) {
             roster_records = [],
             participant_records = [],
             participant_stats_records = [],
+            participant_phase_records = [],  // Telemetry
             player_records = [],
             player_records_direct = [],  // via `/players`
             asset_records = [];
@@ -350,6 +361,127 @@ function flatten(obj) {
             match.assets.forEach((a) => asset_records.push(a));
         });
 
+
+        // data from Telemetry, one phase (early/mid/late/…) per obj
+        await Promise.map(telemetry_objects, async (telemetry) => {
+            if (telemetry.data.length == 0) return;  // TODO rm me
+            // api -> telemetry format
+            const sideToTeam = (s) => s == "left/blue"? "Left" : "Right";
+            // get match participant references
+            const participants = await model.Participant.findAll({
+                where: { match_api_id: telemetry.match_api_id },
+                include: [ {  // TODO rm once pushed to participant
+                    model: model.Roster,
+                    attributes: [ "side" ]
+                } ]
+            }).map((p) => { return {
+                api_id: p.api_id,
+                actor: p.actor,
+                team: sideToTeam(p.roster.side)
+            } });
+            // link participant <-> Telemetry actor/target
+            telemetry.data.forEach((t) => {
+                // participant does stuff
+                if (t.payload.Actor != undefined
+                    && [undefined, 1].indexOf(t.payload.IsHero) != -1
+                    && t.payload.Team != undefined)
+                    t.actor = participants.filter((p) =>
+                        p.actor == t.payload.Actor
+                        && p.team == t.payload.Team)[0];
+                // stuff done to participant
+                if (t.payload.TargetActor != undefined
+                    && [undefined, 1].indexOf(t.payload.TargetIsHero) != -1
+                    && t.payload.Team != undefined)
+                    t.target = participants.filter((p) =>
+                        p.actor == t.payload.TargetActor
+                        && p.team != t.payload.Team)[0];
+            });
+            const participants_phase = participants.map((p) => {
+                return {
+                    participant_api_id: p.api_id,
+                    start: telemetry.start,  // in seconds
+                    end: telemetry.end,
+                    kills: telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "KillActor"
+                    ).length,
+                    deaths: telemetry.data.filter((ev) =>
+                        ev.target == p
+                        && ev.type == "KillActor"
+                    ).length,
+                    minion_kills: telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "KillActor"
+                        && ["*JungleMinion_TreeEnt*",
+                            "*Neutral_JungleMinion_DefaultBig*",
+                            "*Neutral_JungleMinion_DefaultSmall*",
+                            "*LeadMinion*",
+                            "*RangedMinion*",
+                            "*TankMinion*"
+                        ].indexOf(ev.payload.Killed) != -1
+                    ).length,
+                    non_jungle_minion_kills: telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "KillActor"
+                        && ["*LeadMinion*",
+                            "*RangedMinion*",
+                            "*TankMinion*"
+                        ].indexOf(ev.payload.Killed) != -1
+                    ).length,
+                    jungle_kills: telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "KillActor"
+                        && ["*JungleMinion_TreeEnt*",
+                            "*Neutral_JungleMinion_DefaultBig*",
+                            "*Neutral_JungleMinion_DefaultSmall*"
+                        ].indexOf(ev.payload.Killed) != -1
+                    ).length,
+                    crystal_mine_captures: telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "KillActor"
+                        && ev.payload.Target == "*JungleMinion_CrystalMiner*"
+                    ).length,
+                    gold_mine_captures: telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "KillActor"
+                        && ev.payload.Target == "*JungleMinion_GoldMiner*"
+                    ).length,
+                    kraken_captures: telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "KillActor"
+                        && ev.payload.Target == "*Kraken_Jungle*"
+                    ).length,
+                    turret_captures: telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "KillActor"
+                        && (ev.payload.Target == "*Turret*"
+                            || ev.payload.Target == "*VainTurret*")
+                    ).length,
+                    hero_dps: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.TargetIsHero == 1
+                        ? acc + ev.payload.Delt
+                        : acc
+                    , 0),
+                    non_hero_dps: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.TargetIsHero == 0
+                        ? acc + ev.payload.Delt
+                        : acc
+                    , 0),
+                    hero_level: Math.max.apply(Math, telemetry.data.map((ev) =>
+                        ev.actor == p
+                        && ev.type == "LevelUp"
+                        ? ev.payload.Level
+                        : -1
+                    ))
+            } });
+            participant_phase_records = participant_phase_records.concat(
+                participants_phase);  // TODO calc stats
+        });
+
         let transaction_profiler = logger.startTimer();
         // now access db
         try {
@@ -380,6 +512,12 @@ function flatten(obj) {
                         transaction: transaction
                     }), { concurrency: MAXCONNS }
                 );
+                await Promise.map(chunks(participant_phase_records), async (p_p_r) =>
+                    model.ParticipantPhases.bulkCreate(p_p_r, {
+                        ignoreDuplicates: true,
+                        transaction: transaction
+                    }), { concurrency: MAXCONNS }
+                );
                 await Promise.map(chunks(player_records), async (pl_r) =>
                     model.Player.bulkCreate(pl_r, {
                         ignoreDuplicates: true,
@@ -391,7 +529,8 @@ function flatten(obj) {
                         // if set to [] (all), upsert messes with autoincrement
                         updateOnDuplicate: [
                             "shard_id", "api_id", "name", "last_update",
-                            "created_at", "level", "xp", "lifetime_gold"
+                            "created_at", "level", "xp", "lifetime_gold",
+                            "skill_tier"
                         ],
                         transaction: transaction
                     }), { concurrency: MAXCONNS }
