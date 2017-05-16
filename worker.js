@@ -470,11 +470,25 @@ function flatten(obj) {
                         ? acc + ev.payload.Delt
                         : acc
                     , 0),
+                    hero_damage_true: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.TargetIsHero == 1
+                        ? acc + ev.payload.Damage
+                        : acc
+                    , 0),
                     non_hero_damage_dealt: telemetry.data.reduce((acc, ev) =>
                         ev.actor == p
                         && ev.type == "DealDamage"
                         && ev.payload.TargetIsHero == 0
                         ? acc + ev.payload.Delt
+                        : acc
+                    , 0),
+                    non_hero_damage_true: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.TargetIsHero == 0
+                        ? acc + ev.payload.Damage
                         : acc
                     , 0),
                     hero_level: Math.max.apply(Math, telemetry.data.map((ev) =>
