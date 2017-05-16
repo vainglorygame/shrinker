@@ -390,10 +390,16 @@ function flatten(obj) {
                         && p.team == t.payload.Team)[0];
                 // ability targets
                 if (t.payload.TargetActor != undefined
-                    && [undefined, 1].indexOf(t.payload.TargetIsHero) != -1
                     && t.payload.Team != undefined)
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.TargetActor
+                        && p.team != t.payload.Team)[0];
+                // damage targets
+                if (t.payload.Target != undefined
+                    && t.payload.TargetIsHero == 1
+                    && t.payload.Team != undefined)
+                    t.target = participants.filter((p) =>
+                        p.actor == t.payload.Target
                         && p.team != t.payload.Team)[0];
                 // participant killed
                 if (t.payload.Killed != undefined
@@ -405,9 +411,10 @@ function flatten(obj) {
             });
             const participants_phase = participants.map((p) => {
                 return {
-                    participant_api_id: p.api_id,
                     start: telemetry.start,  // in seconds
                     end: telemetry.end,
+                    participant_api_id: p.api_id,
+
                     kills: telemetry.data.filter((ev) =>
                         ev.actor == p
                         && ev.killed != undefined
@@ -415,6 +422,7 @@ function flatten(obj) {
                     deaths: telemetry.data.filter((ev) =>
                         ev.killed == p
                     ).length,
+                    // assists missing in data
                     minion_kills: telemetry.data.filter((ev) =>
                         ev.actor == p
                         && ev.type == "KillActor"
@@ -426,20 +434,20 @@ function flatten(obj) {
                             "*TankMinion*"
                         ].indexOf(ev.payload.Killed) != -1
                     ).length,
-                    non_jungle_minion_kills: telemetry.data.filter((ev) =>
-                        ev.actor == p
-                        && ev.type == "KillActor"
-                        && ["*LeadMinion*",
-                            "*RangedMinion*",
-                            "*TankMinion*"
-                        ].indexOf(ev.payload.Killed) != -1
-                    ).length,
                     jungle_kills: telemetry.data.filter((ev) =>
                         ev.actor == p
                         && ev.type == "KillActor"
                         && ["*JungleMinion_TreeEnt*",
                             "*Neutral_JungleMinion_DefaultBig*",
                             "*Neutral_JungleMinion_DefaultSmall*"
+                        ].indexOf(ev.payload.Killed) != -1
+                    ).length,
+                    non_jungle_minion_kills: telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "KillActor"
+                        && ["*LeadMinion*",
+                            "*RangedMinion*",
+                            "*TankMinion*"
                         ].indexOf(ev.payload.Killed) != -1
                     ).length,
                     crystal_mine_captures: telemetry.data.filter((ev) =>
@@ -463,31 +471,112 @@ function flatten(obj) {
                         && (ev.payload.Killed == "*Turret*"
                             || ev.payload.Killed == "*VainTurret*")
                     ).length,
-                    hero_damage_dealt: telemetry.data.reduce((acc, ev) =>
-                        ev.actor == p
-                        && ev.type == "DealDamage"
-                        && ev.payload.TargetIsHero == 1
-                        ? acc + ev.payload.Delt
-                        : acc
-                    , 0),
-                    hero_damage_true: telemetry.data.reduce((acc, ev) =>
+                    // no gold in data
+                    dmg_true_hero: telemetry.data.reduce((acc, ev) =>
                         ev.actor == p
                         && ev.type == "DealDamage"
                         && ev.payload.TargetIsHero == 1
                         ? acc + ev.payload.Damage
                         : acc
                     , 0),
-                    non_hero_damage_dealt: telemetry.data.reduce((acc, ev) =>
+                    dmg_true_kraken: telemetry.data.reduce((acc, ev) =>
                         ev.actor == p
                         && ev.type == "DealDamage"
-                        && ev.payload.TargetIsHero == 0
+                        && ["*Kraken_Jungle*",
+                            "*Kraken_Captured*"
+                        ].indexOf(ev.payload.Target) != -1
+                        ? acc + ev.payload.Damage
+                        : acc
+                    , 0),
+                    dmg_true_turret: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.Target == "*Turret*"
+                        ? acc + ev.payload.Damage
+                        : acc
+                    , 0),
+                    dmg_true_vain_turret: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.Target == "*VainTurret*"
+                        ? acc + ev.payload.Damage
+                        : acc
+                    , 0),
+                    dmg_true_others: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ["*VainCrystalAway*",
+                            "*JungleMinion_CrystalMiner*",
+                            "*JungleMinion_GoldMiner*"
+                        ].indexOf(ev.payload.Target) != -1
+                        ? acc + ev.payload.Damage
+                        : acc
+                    , 0),
+                    dmg_dealt_hero: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.TargetIsHero == 1
                         ? acc + ev.payload.Delt
                         : acc
                     , 0),
-                    non_hero_damage_true: telemetry.data.reduce((acc, ev) =>
+                    dmg_dealt_kraken: telemetry.data.reduce((acc, ev) =>
                         ev.actor == p
                         && ev.type == "DealDamage"
-                        && ev.payload.TargetIsHero == 0
+                        && ["*Kraken_Jungle*",
+                            "*Kraken_Captured*"
+                        ].indexOf(ev.payload.Target) != -1
+                        ? acc + ev.payload.Delt
+                        : acc
+                    , 0),
+                    dmg_dealt_turret: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.Target == "*Turret*"
+                        ? acc + ev.payload.Delt
+                        : acc
+                    , 0),
+                    dmg_dealt_vain_turret: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.Target == "*VainTurret*"
+                        ? acc + ev.payload.Delt
+                        : acc
+                    , 0),
+                    dmg_dealt_others: telemetry.data.reduce((acc, ev) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ["*VainCrystalAway*",
+                            "*JungleMinion_CrystalMiner*",
+                            "*JungleMinion_GoldMiner*"
+                        ].indexOf(ev.payload.Target) != -1
+                        ? acc + ev.payload.Delt
+                        : acc
+                    , 0),
+                    dmg_rcvd_dealt_hero: telemetry.data.reduce((acc, ev) =>
+                        ev.target == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.IsHero == 1
+                        ? acc + ev.payload.Delt
+                        : acc
+                    , 0),
+                    dmg_rcvd_true_hero: telemetry.data.reduce((acc, ev) =>
+                        ev.target == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.IsHero == 1
+                        ? acc + ev.payload.Damage
+                        : acc
+                    , 0),
+                    dmg_rcvd_dealt_others: telemetry.data.reduce((acc, ev) =>
+                        ev.target == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.IsHero == 0
+                        ? acc + ev.payload.Delt
+                        : acc
+                    , 0),
+                    dmg_rcvd_true_others: telemetry.data.reduce((acc, ev) =>
+                        ev.target == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.IsHero == 0
                         ? acc + ev.payload.Damage
                         : acc
                     , 0),
@@ -497,6 +586,7 @@ function flatten(obj) {
                         ? ev.payload.Level
                         : -1
                     ))
+                    // traits calculated later
             } });
             participant_phase_records = participant_phase_records.concat(
                 participants_phase);  // TODO calc stats
