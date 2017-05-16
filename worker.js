@@ -520,7 +520,9 @@ function flatten(obj) {
                 );
                 await Promise.map(chunks(participant_phase_records), async (p_p_r) =>
                     model.ParticipantPhases.bulkCreate(p_p_r, {
-                        ignoreDuplicates: true,
+                        /* ignoreDuplicates: true, TODO DEBUG */
+                        ignoreDuplicates: false,
+                        updateOnDuplicate: [],
                         transaction: transaction
                     }), { concurrency: MAXCONNS }
                 );
