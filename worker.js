@@ -381,33 +381,50 @@ function flatten(obj) {
             } });
             // link participant <-> Telemetry actor/target
             telemetry.data.forEach((t) => {
-                // participant kills
-                if (t.payload.Actor != undefined
-                    && [undefined, 1].indexOf(t.payload.IsHero) != -1
-                    && t.payload.Team != undefined)
+                // item actor
+                if (t.type == "UseItemAbility")
+                    t.actor = participants.filter((p) =>
+                        p.actor == t.payload.Actor
+                        && p.team == t.payload.Team)[0];
+                // item target
+                if (t.type == "UseItemAbility")
+                    t.actor = participants.filter((p) =>
+                        p.actor == t.payload.TargetActor
+                        && p.team != t.payload.Team)[0];
+                // ability actor
+                if (t.type == "UseAbility")
                     t.actor = participants.filter((p) =>
                         p.actor == t.payload.Actor
                         && p.team == t.payload.Team)[0];
                 // ability targets
-                if (t.payload.TargetActor != undefined
-                    && t.payload.Team != undefined)
+                if (t.type == "UseAbility")
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.TargetActor
                         && p.team != t.payload.Team)[0];
-                // damage targets
-                if (t.payload.Target != undefined
-                    && t.payload.TargetIsHero == 1
-                    && t.payload.Team != undefined)
+                // damage actor
+                if (t.type == "DealDamage"
+                    && t.payload.IsHero == 1)
+                    t.actor = participants.filter((p) =>
+                        p.actor == t.payload.Actor
+                        && p.team == t.payload.Team)[0];
+                // damage target
+                if (t.type == "DealDamage"
+                    && t.payload.TargetIsHero == 1)
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.Target
                         && p.team != t.payload.Team)[0];
-                // participant killed
-                if (t.payload.Killed != undefined
-                    && t.payload.TargetIsHero == 1
-                    && t.payload.KilledTeam != undefined)
+                // kill actor
+                if (t.type == "KillActor"
+                    && t.payload.IsHero == 1)
+                    t.actor = participants.filter((p) =>
+                        p.actor == t.payload.Actor
+                        && p.team == t.payload.Team)[0];
+                // kill target
+                if (t.event == "KillActor"
+                    && t.payload.TargetIsHero == 1)
                     t.killed = participants.filter((p) =>
                         p.actor == t.payload.Killed
-                        && p.team == t.payload.KilledTeam)[0];
+                        && p.team != t.payload.Team)[0];
             });
             const participants_phase = participants.map((p) => {
                 return {
