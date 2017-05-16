@@ -445,23 +445,23 @@ function flatten(obj) {
                     crystal_mine_captures: telemetry.data.filter((ev) =>
                         ev.actor == p
                         && ev.type == "KillActor"
-                        && ev.payload.Target == "*JungleMinion_CrystalMiner*"
+                        && ev.payload.Killed == "*JungleMinion_CrystalMiner*"
                     ).length,
                     gold_mine_captures: telemetry.data.filter((ev) =>
                         ev.actor == p
                         && ev.type == "KillActor"
-                        && ev.payload.Target == "*JungleMinion_GoldMiner*"
+                        && ev.payload.Killed == "*JungleMinion_GoldMiner*"
                     ).length,
                     kraken_captures: telemetry.data.filter((ev) =>
                         ev.actor == p
                         && ev.type == "KillActor"
-                        && ev.payload.Target == "*Kraken_Jungle*"
+                        && ev.payload.Killed == "*Kraken_Jungle*"
                     ).length,
                     turret_captures: telemetry.data.filter((ev) =>
                         ev.actor == p
                         && ev.type == "KillActor"
-                        && (ev.payload.Target == "*Turret*"
-                            || ev.payload.Target == "*VainTurret*")
+                        && (ev.payload.Killed == "*Turret*"
+                            || ev.payload.Killed == "*VainTurret*")
                     ).length,
                     hero_damage_dealt: telemetry.data.reduce((acc, ev) =>
                         ev.actor == p
