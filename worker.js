@@ -765,12 +765,24 @@ function flatten(obj) {
             "gold", "farm"].map((attr) =>
                 p_s[attr] = participant[attr]);
 
+        let role = classify_role(p_s);
+
         // score calculations
-        let impact_score = -0.28779906 + (p_s.kills * 0.22290324) + (p_s.deaths * -0.50438917) + (p_s.assists * 0.34841597);
-        p_s.impact_score = (impact_score + 10) / (10 + 10);
+        let impact_score = 50;
+        switch (role) {
+            case "carry":
+                impact_score = -0.47249153 + 0.50145197 * p_s.assists - 0.7136091 * p_s.deaths + 0.18712844 * p_s.kills + 0.00531455 * p_s.farm; break;
+            case "jungler":
+                impact_score = -0.54510754 + 0.19982097 * p_s.assists - 0.35694721 * p_s.deaths + 0.09942473 * p_s.kills + 0.01256313 * p_s.farm; break;
+
+            case "captain":
+                impact_score = -0.46473539 + 0.09968104 * p_s.assists - 0.38401479 * p_s.deaths + 0.14753133 * p_s.kills + 0.03431293 * p_s.farm; break;
+        }
+        p_s.impact_score = (impact_score - (-4.5038622921659375) ) / (4.431094119937388 - (-4.5038622921659375) );
+
 
         // classifications
-        p.role_id = role_db_map[classify_role(p_s)];
+        p.role_id = role_db_map[role];
 
         // traits calculations
         if (roster.hero_kills == 0) p_s.kill_participation = 0;
