@@ -696,7 +696,6 @@ function flatten(obj) {
         transaction_profiler.done("database transaction");
 
         // notify web
-        // …about new matches
         await Promise.map(msgs, async (m) => {
             if (m.properties.headers.notify == undefined) return;
             let notif = "error";
@@ -704,6 +703,8 @@ function flatten(obj) {
             if (m.properties.type == "match") notif = "matches_update";
             // player obj updated
             if (m.properties.type == "player") notif = "stats_update";
+            // new phases
+            if (m.properties.type == "telemetry") notif = "phases_update";
 
             await ch.publish("amq.topic", m.properties.headers.notify,
                 new Buffer(notif));
@@ -711,10 +712,6 @@ function flatten(obj) {
         // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
-        // …about new phases
-        await Promise.map(telemetry_objects, async (t) =>
-            await ch.publish("amq.topic", "match." + t.match_api_id,
-                new Buffer("phases_update")) );
     }
 
     // Split participant API data into participant and participant_stats
