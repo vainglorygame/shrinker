@@ -711,6 +711,10 @@ function flatten(obj) {
         // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
+        // …about new phases
+        await Promise.map(telemetry_objects, async (t) =>
+            await ch.publish("amq.topic", "match." + t.match_api_id,
+                new Buffer("phases_update")) );
     }
 
     // Split participant API data into participant and participant_stats
