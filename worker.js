@@ -26,6 +26,8 @@ const RABBITMQ_URI = process.env.RABBITMQ_URI,
     // maximum number of elements to be inserted in one statement
     CHUNKSIZE = parseInt(process.env.CHUNKSIZE) || 100,
     MAXCONNS = parseInt(process.env.MAXCONNS) || 10,  // how many concurrent actions
+    DOANALYZEMATCH = process.env.DOANALYZEMATCH == "true",
+    ANALYZE_QUEUE = process.env.ANALYZE_QUEUE || "analyze",
     LOAD_TIMEOUT = parseFloat(process.env.LOAD_TIMEOUT) || 5000, // ms
     IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 700;  // ms
 
@@ -700,11 +702,27 @@ function flatten(obj) {
             if (m.properties.headers.notify == undefined) return;
             let notif = "error";
             // new match
-            if (m.properties.type == "match") notif = "matches_update";
+            if (m.properties.type == "match") {
+                notif = "matches_update";
+                // notify player.name.api_id about match_update
+                await Promise.map(match_records, async (mat) =>
+                    await ch.publish("amq.topic",
+                        m.properties.headers.notify + "." + mat.api_id,
+                        new Buffer("match_update"))
+                );
+            }
             // player obj updated
             if (m.properties.type == "player") notif = "stats_update";
             // new phases
-            if (m.properties.type == "telemetry") notif = "phases_update";
+            if (m.properties.type == "telemetry") {
+                notif = "phases_update";
+                // notify player.name.api_id about phase_update
+                await Promise.map(telemetry_objects, async (t) =>
+                    await ch.publish("amq.topic",
+                        m.properties.headers.notify + "." + t.match_api_id,
+                        new Buffer("phase_update"))
+                );
+            }
 
             await ch.publish("amq.topic", m.properties.headers.notify,
                 new Buffer(notif));
@@ -712,6 +730,11 @@ function flatten(obj) {
         // …global about new matches
         if (match_records.length > 0)
             await ch.publish("amq.topic", "global", new Buffer("matches_update"));
+        // notify follow up services
+        if (DOANALYZEMATCH)
+            await Promise.each(match_records, async (m) =>
+                await ch.sendToQueue(ANALYZE_QUEUE, new Buffer(m.api_id),
+                    { persistent: true }));
     }
 
     // Split participant API data into participant and participant_stats
