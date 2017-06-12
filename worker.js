@@ -13,8 +13,10 @@ const amqp = require("amqplib"),
     winston = require("winston"),
     loggly = require("winston-loggly-bulk"),
     Seq = require("sequelize"),
-    item_name_map = require("../orm/items"),
-    hero_name_map = require("../orm/heroes"),
+    api_name_mappings = require("../orm/mappings").map,
+    isAbility = require("../orm/mappings").isAbility,
+    isItem = require("../orm/mappings").isItem,
+    isHero = require("../orm/mappings").isHero,
     sleep = require("sleep-promise");
 
 const RABBITMQ_URI = process.env.RABBITMQ_URI,
@@ -128,18 +130,18 @@ function flatten(obj) {
     // populate maps
     await Promise.all([
         model.Item.findAll()
-            .map((item) => item_db_map[item.name] = item.id),
+            .map((item) => item_db_map.set(item.name, item.id)),
         model.Hero.findAll()
-            .map((hero) => hero_db_map[hero.name] = hero.id),
+            .map((hero) => hero_db_map.set(hero.name, hero.id)),
         model.Series.findAll()
             .map((series) => {
                 if (series.dimension_on == "player")
-                    series_db_map[series.name] = series.id;
+                    series_db_map.set(series.name, series.id);
             }),
         model.GameMode.findAll()
-            .map((mode) => game_mode_db_map[mode.name] = mode.id),
+            .map((mode) => game_mode_db_map.set(mode.name, mode.id)),
         model.Role.findAll()
-            .map((role) => role_db_map[role.name] = role.id)
+            .map((role) => role_db_map.set(role.name, role.id))
     ]);
 
     // as long as the queue is filled, msg are not ACKed
@@ -164,6 +166,10 @@ function flatten(obj) {
             const match = JSON.parse(msg.content);
             // deduplicate and reject immediately
             if (await model.Match.count({ where: { api_id: match.id } }) > 0) {
+                // send match_dupe to web player.ign.api_id
+                await ch.publish("amq.topic",
+                    msg.properties.headers.notify + "." + match.id,
+                    new Buffer("match_dupe"))
                 await ch.nack(msg, false, false);  // discard
                 return;
             }
@@ -311,7 +317,7 @@ function flatten(obj) {
                     participant.attributes.stats.jungleKills = participant.attributes.stats.jungleKills || 0;
 
                     // map items: names/id -> name -> db
-                    const item_id = ((i) => item_db_map[item_name_map[i]]);
+                    const item_id = ((i) => item_db_map.get(api_name_mappings.get(i)));
                     let itms = [];
 
                     const pas = participant.attributes.stats;  // I'm lazy
@@ -368,7 +374,9 @@ function flatten(obj) {
         await Promise.map(telemetry_objects, async (telemetry) => {
             if (telemetry.data.length == 0) return;  // TODO rm me
             // api -> telemetry format
-            const sideToTeam = (s) => s == "left/blue"? "Left" : "Right";
+            const sideToTeam = (s) => s == "left/blue"? "Left" : "Right",
+                // yes there is yet another format and yes it's strings
+                sideToTeamNo = (s) => s == "left/blue"? "1" : "2";
             // get match participant references
             const participants = await model.Participant.findAll({
                 where: { match_api_id: telemetry.match_api_id },
@@ -378,33 +386,41 @@ function flatten(obj) {
                 } ]
             }).map((p) => { return {
                 api_id: p.api_id,
+                player_api_id: p.player_api_id,
                 actor: p.actor,
                 team: sideToTeam(p.roster.side)
             } });
+
+            // seconds since epoch; first spawn time
+            const matchstart = new Date(Date.parse(telemetry.match_start)).getTime() / 1000;
+
             // link participant <-> Telemetry actor/target
+            // available as `.actor` or as `.target`
             telemetry.data.forEach((t) => {
-                // item actor
-                if (t.type == "UseItemAbility")
+                // seconds after this phase's start
+                t.offset = new Date(Date.parse(t.time)).getTime() / 1000 - matchstart;
+
+                // linking
+                if (t.type == "HeroSelect")
+                    t.actor = participants.filter((p) =>
+                        p.player_api_id == t.payload.Player)[0];
+                if (t.type == "BuyItem"
+                    || t.type == "SellItem"
+                    || t.type == "UseItemAbility"
+                    || t.type == "LearnAbility"
+                    || t.type == "UseAbility"
+                    || t.type == "LevelUp")
                     t.actor = participants.filter((p) =>
                         p.actor == t.payload.Actor
                         && p.team == t.payload.Team)[0];
-                // item target
-                if (t.type == "UseItemAbility")
-                    t.target = participants.filter((p) =>
-                        p.actor == t.payload.TargetActor
-                        && p.team != t.payload.Team)[0];
-                // ability actor
-                if (t.type == "UseAbility")
-                    t.actor = participants.filter((p) =>
-                        p.actor == t.payload.Actor
-                        && p.team == t.payload.Team)[0];
-                // ability targets
-                if (t.type == "UseAbility")
+                if (t.type == "UseItemAbility"
+                    || t.type == "UseAbility")
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.TargetActor
                         && p.team != t.payload.Team)[0];
                 // damage actor
-                if (t.type == "DealDamage"
+                if ((t.type == "DealDamage"
+                     || t.type == "KillActor")
                     && t.payload.IsHero == 1)
                     t.actor = participants.filter((p) =>
                         p.actor == t.payload.Actor
@@ -415,26 +431,21 @@ function flatten(obj) {
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.Target
                         && p.team != t.payload.Team)[0];
-                // kill actor
-                if (t.type == "KillActor"
-                    && t.payload.IsHero == 1)
-                    t.actor = participants.filter((p) =>
-                        p.actor == t.payload.Actor
-                        && p.team == t.payload.Team)[0];
                 // kill target
                 if (t.type == "KillActor"
                     && t.payload.TargetIsHero == 1)
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.Killed
                         && p.team == t.payload.KilledTeam)[0];
-                // level up actor
-                if (t.type == "LevelUp")
-                    t.actor = participants.filter((p) =>
-                        p.actor == t.payload.Actor
-                        && p.team == t.payload.Team)[0];
+            });
+            telemetry.data.forEach((ev) => {  // TODO debug
+                if (ev.payload.Ability == undefined || ev.payload.IsHero == 0) return;
+                if (!api_name_mappings.has(ev.payload.Ability))
+                    console.error("ab to name map missing", ev.payload.Ability);
             });
             const participants_phase = participants.map((p) => { return {
-                start: telemetry.start,  // in seconds
+                // TODO ban data workaround
+                start: telemetry.start < 0? 0 : telemetry.start,  // in seconds
                 end: telemetry.end,
                 participant_api_id: p.api_id,
 
@@ -615,7 +626,75 @@ function flatten(obj) {
                     ? ev.payload.Level
                     : acc
                 , -1),
-                // traits calculated later
+                items: null,  // TODO
+                item_grants: JSON.stringify(telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "BuyItem"
+                    ? acc.concat(item_db_map.get(api_name_mappings.get(ev.payload.Item)))
+                    : acc
+                , [])),
+                item_sells: JSON.stringify(telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "SellItem"
+                    ? acc.concat(item_db_map.get(api_name_mappings.get(ev.payload.Item)))
+                    : acc
+                , [])),
+                ability_levels: JSON.stringify(telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "LearnAbility"
+                    ? acc.concat([ [ api_name_mappings.get(ev.payload.Ability).split(" ")[1],
+                        ev.offset ] ])
+                    : acc
+                , [])),
+                ability_uses: JSON.stringify(telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "UseAbility"
+                    && ["A", "B", "C"].indexOf(
+                        api_name_mappings.get(ev.payload.Ability).split(" ")[1]
+                    ) != -1
+                    ? acc.concat([ [ api_name_mappings.get(ev.payload.Ability).split(" ")[1],
+                        ev.offset ] ])
+                    : acc
+                , [])),
+                ability_damage: JSON.stringify(telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)  // TODO
+                    && api_name_mappings.has(ev.payload.Source)
+                    && ["A", "B", "C"].indexOf(
+                        api_name_mappings.get(ev.payload.Source).split(" ")[1]
+                    ) != -1  // TODO refactor here
+                    ? acc.concat([ [ api_name_mappings.get(ev.payload.Source).split(" ")[1],
+                          ev.payload.Damage, ev.offset ] ])
+                    : acc
+                , [])),
+                item_uses: JSON.stringify(telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "UseItemAbility"
+                    ? acc.concat([ [ item_db_map.get(api_name_mappings.get(ev.payload.Ability)),
+                          ev.offset ] ])
+                    : acc
+                , [])),
+                player_damage: null,  // TODO
+                items: null,  // TODO
+                draft_position: telemetry.data.filter((ev) =>
+                    ev.type == "HeroSelect").indexOf(
+                        telemetry.data.filter((ev) =>
+                            ev.type == "HeroSelect"
+                            && ev.actor == p)[0]),
+                ban: hero_db_map.get(api_name_mappings.get(
+                    telemetry.data
+                        .filter((ev) => ev.type == "HeroBan")
+                        .map((sel) => sel.payload.Hero)[0]  // can be null
+                )),
+                pick: hero_db_map.get(api_name_mappings.get(
+                    telemetry.data
+                        .filter((ev) =>
+                            ev.type == "HeroSelect"
+                            && ev.actor == p)
+                        .map((sel) => sel.payload.Hero)[0]  // can be null
+                )),// traits calculated later
             } });
             participant_phase_records = participant_phase_records.concat(
                 participants_phase);  // TODO calc stats
@@ -759,17 +838,17 @@ function flatten(obj) {
         // mappings
         // hero names additionally need to be mapped old to new names
         // (Sayoc = Taka)
-        p.hero_id = hero_db_map[hero_name_map[participant.actor]];
+        p.hero_id = hero_db_map.get(api_name_mappings.get(participant.actor));
         if (match.patch_version != "")
-            p.series_id = series_db_map["Patch " + match.patch_version];
+            p.series_id = series_db_map.get("Patch " + match.patch_version);
         else {
             if (p_s.created_at < new Date("2017-03-28T15:00:00"))
-                p.series_id = series_db_map["Patch 2.2"];
+                p.series_id = series_db_map.get("Patch 2.2");
             else if (p_s.created_at < new Date("2017-04-26T15:00:00"))
-                p.series_id = series_db_map["Patch 2.3"];
-            else p.series_id = series_db_map["Patch 2.4"];
+                p.series_id = series_db_map.get("Patch 2.3");
+            else p.series_id = series_db_map.get("Patch 2.4");
         }
-        p.game_mode_id = game_mode_db_map[match.game_mode];
+        p.game_mode_id = game_mode_db_map.get(match.game_mode);
 
         // attributes to copy from API to participant
         // these don't change over the duration of the match
@@ -806,7 +885,7 @@ function flatten(obj) {
 
 
         // classifications
-        p.role_id = role_db_map[role];
+        p.role_id = role_db_map.get(role);
 
         // traits calculations
         if (roster.hero_kills == 0) p_s.kill_participation = 0;
