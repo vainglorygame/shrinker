@@ -166,14 +166,16 @@ function flatten(obj) {
             const match = JSON.parse(msg.content);
             // deduplicate and reject immediately
             if (await model.Match.count({ where: { api_id: match.id } }) > 0) {
-                // send match_dupe to web player.ign.api_id
-                await ch.publish("amq.topic",
-                    msg.properties.headers.notify + "." + match.id,
-                    new Buffer("match_dupe"))
-                await ch.nack(msg, false, false);  // discard
-                return;
-            }
-            match_data.add(match);
+                if (msg.properties.headers.notify != undefined) {
+                    await ch.publish("amq.topic",
+                        msg.properties.headers.notify,
+                        new Buffer("matches_dupe"))
+                    // send match_dupe to web player.ign.api_id
+                    await ch.publish("amq.topic",
+                        msg.properties.headers.notify + "." + match.id,
+                        new Buffer("match_dupe"))
+                }
+            } else match_data.add(match);
             msg_buffer.add(msg);
         }
         if (msg.properties.type == "telemetry") {
@@ -783,6 +785,7 @@ function flatten(obj) {
             // new match
             if (m.properties.type == "match") {
                 notif = "matches_update";
+                // TODO this sends match_update for every match in the batch to every player
                 // notify player.name.api_id about match_update
                 await Promise.map(match_records, async (mat) =>
                     await ch.publish("amq.topic",
