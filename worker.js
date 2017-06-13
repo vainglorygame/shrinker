@@ -390,7 +390,8 @@ function flatten(obj) {
                 api_id: p.api_id,
                 player_api_id: p.player_api_id,
                 actor: p.actor,
-                team: sideToTeam(p.roster.side)
+                team: sideToTeam(p.roster.side),
+                teamNo: sideToTeamNo(p.roster.side)
             } });
 
             // seconds since epoch; first spawn time
@@ -689,7 +690,8 @@ function flatten(obj) {
                             && ev.actor == p)[0]),
                 ban: hero_db_map.get(api_name_mappings.get(
                     telemetry.data
-                        .filter((ev) => ev.type == "HeroBan")
+                        .filter((ev) => ev.type == "HeroBan" &&
+                            ev.payload.Team == p.teamNo)
                         .map((sel) => sel.payload.Hero)[0]  // can be null
                 )),
                 pick: hero_db_map.get(api_name_mappings.get(
