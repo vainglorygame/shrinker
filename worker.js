@@ -440,11 +440,13 @@ function flatten(obj) {
                         p.actor == t.payload.Killed
                         && p.team == t.payload.KilledTeam)[0];
             });
+            /*
             telemetry.data.forEach((ev) => {  // TODO debug
                 if (ev.payload.Ability == undefined || ev.payload.IsHero == 0) return;
                 if (!api_name_mappings.has(ev.payload.Ability))
                     console.error("ab to name map missing", ev.payload.Ability);
             });
+            */
             const participants_phase = participants.map((p) => { return {
                 // TODO ban data workaround
                 start: telemetry.start < 0? 0 : telemetry.start,  // in seconds
