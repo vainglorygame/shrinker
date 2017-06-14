@@ -796,6 +796,8 @@ function flatten(obj) {
                         m.properties.headers.notify + "." + mat.api_id,
                         new Buffer("match_update"))
                 );
+                await ch.publish("amq.topic", m.properties.headers.notify,
+                    new Buffer("match_update"));
             }
             // player obj updated
             if (m.properties.type == "player") notif = "stats_update";
