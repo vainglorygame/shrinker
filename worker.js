@@ -810,8 +810,9 @@ function flatten(obj) {
                 );
             }
 
-            await ch.publish("amq.topic", m.properties.headers.notify,
-                new Buffer(notif));
+            if (m.properties.headers.donotify == true)  // TODO remove later
+                await ch.publish("amq.topic", m.properties.headers.notify,
+                    new Buffer(notif));
         });
         // …global about new matches
         if (match_records.length > 0)
