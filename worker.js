@@ -803,13 +803,10 @@ function flatten(obj) {
             if (m.properties.type == "player") notif = "stats_update";
             // new phases
             if (m.properties.type == "telemetry") {
-                notif = "phases_update";
-                // notify player.name.api_id about phase_update
-                await Promise.map(telemetry_objects, async (t) =>
-                    await ch.publish("amq.topic",
-                        m.properties.headers.notify + "." + t.match_api_id,
-                        new Buffer("phase_update"))
-                );
+                // notify match.api_id about phase_update
+                await ch.publish("amq.topic",
+                    m.properties.headers.notify,
+                    new Buffer("phase_update"))
             }
 
             if (m.properties.headers.donotify == true)  // TODO remove later
