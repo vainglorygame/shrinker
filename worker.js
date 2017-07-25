@@ -107,11 +107,11 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
         if (profiler == undefined) profiler = logger.startTimer();
         // timeout after first job
         if (load_timer == undefined)
-            load_timer = setTimeout(process, LOAD_TIMEOUT);
+            load_timer = setTimeout(tryProcess, LOAD_TIMEOUT);
         // timeout after last job
         if (idle_timer != undefined)
             clearTimeout(idle_timer);
-        idle_timer = setTimeout(process, IDLE_TIMEOUT);
+        idle_timer = setTimeout(tryProcess, IDLE_TIMEOUT);
         // maximum data pressure
         if (telemetry_data.size == BATCHSIZE)
             await tryProcess();
@@ -132,6 +132,40 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
         // clean up to allow processor to accept while we wait for db
         clearTimeout(idle_timer);
         clearTimeout(load_timer);
+
+        try {
+            await process();
+        } catch (err) {
+            if (err instanceof Seq.TimeoutError) {
+                // deadlocks / timeout
+                logger.error("SQL error", err);
+                await Promise.map(msgs, async (m) =>
+                    await ch.nack(m, false, true));  // retry
+            } else {
+                // log, move to error queue and NACK
+                logger.error(err);
+                await Promise.map(msgs, async (m) => {
+                    await ch.sendToQueue(QUEUE + "_failed", m.content, {
+                        persistent: true,
+                        headers: m.properties.headers
+                    });
+                    await ch.nack(m, false, false);
+                });
+            }
+            return;
+        }
+
+        logger.info("acking batch", { size: msgs.size });
+        await Promise.map(msgs, async (m) => await ch.ack(m));
+        // notify web
+        await Promise.map(msgs, async (m) => {
+            if (m.properties.headers.notify == undefined) return;
+            // new phases
+            // notify match.api_id about phase_update
+            await ch.publish("amq.topic",
+                m.properties.headers.notify,
+                new Buffer("phase_update"))
+        });
     }
 
     // finish a whole batch
@@ -473,50 +507,18 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
 
         let transaction_profiler = logger.startTimer();
         // now access db
-        try {
-            // upsert whole batch in parallel
-            logger.info("inserting batch into db");
-            await seq.transaction({ autocommit: false }, async (transaction) => {
-                await Promise.map(chunks(participant_phase_records), async (p_p_r) =>
-                    model.ParticipantPhases.bulkCreate(p_p_r, {
-                        ignoreDuplicates: true,
-                        updateOnDuplicate: [],
-                        transaction: transaction
-                    }), { concurrency: MAXCONNS }
-                );
-            });
-
-            logger.info("acking batch", { size: msgs.size });
-            await Promise.map(msgs, async (m) => await ch.ack(m));
-        } catch (err) {
-            if (err instanceof Seq.TimeoutError) {
-                // deadlocks / timeout
-                logger.error("SQL error", err);
-                await Promise.map(msgs, async (m) =>
-                    await ch.nack(m, false, true));  // retry
-            } else {
-                // log, move to error queue and NACK
-                logger.error(err);
-                await Promise.map(msgs, async (m) => {
-                    await ch.sendToQueue(QUEUE + "_failed", m.content, {
-                        persistent: true,
-                        headers: m.properties.headers
-                    });
-                    await ch.nack(m, false, false);
-                });
-            }
-        }
-        transaction_profiler.done("database transaction");
-
-        // notify web
-        await Promise.map(msgs, async (m) => {
-            if (m.properties.headers.notify == undefined) return;
-            // new phases
-            // notify match.api_id about phase_update
-            await ch.publish("amq.topic",
-                m.properties.headers.notify,
-                new Buffer("phase_update"))
+        // upsert whole batch in parallel
+        logger.info("inserting batch into db");
+        await seq.transaction({ autocommit: false }, async (transaction) => {
+            await Promise.map(chunks(participant_phase_records), async (p_p_r) =>
+                model.ParticipantPhases.bulkCreate(p_p_r, {
+                    ignoreDuplicates: true,
+                    updateOnDuplicate: [],
+                    transaction: transaction
+                }), { concurrency: MAXCONNS }
+            );
         });
+        transaction_profiler.done("database transaction");
     }
 });
 
