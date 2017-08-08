@@ -71,6 +71,11 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
     // server sends as long as there are less than `prefetch` unACKed
     await ch.prefetch(BATCHSIZE);
 
+    logger.info("configuration", {
+        QUEUE, BATCHSIZE, CHUNKSIZE, MAXCONNS, LOAD_TIMEOUT, IDLE_TIMEOUT,
+        DOREAPMATCH, REAP_QUEUE
+    });
+
     const model = require("../orm/model")(seq, Seq);
 
     // performance logging
