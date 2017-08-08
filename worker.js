@@ -21,8 +21,8 @@ const RABBITMQ_URI = process.env.RABBITMQ_URI,
     // maximum number of elements to be inserted in one statement
     CHUNKSIZE = parseInt(process.env.CHUNKSIZE) || 100,
     MAXCONNS = parseInt(process.env.MAXCONNS) || 10,  // how many concurrent actions
-    DOANALYZEMATCH = process.env.DOANALYZEMATCH == "true",
-    ANALYZE_QUEUE = process.env.ANALYZE_QUEUE || "analyze",
+    DOREAPMATCH = process.env.DOREAPMATCH == "true",
+    REAP_QUEUE = process.env.REAP_QUEUE || "reap",
     LOAD_TIMEOUT = parseFloat(process.env.LOAD_TIMEOUT) || 5000, // ms
     IDLE_TIMEOUT = parseFloat(process.env.IDLE_TIMEOUT) || 700;  // ms
 
@@ -67,6 +67,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
     const ch = await rabbit.createChannel();
     await ch.assertQueue(QUEUE, { durable: true });
     await ch.assertQueue(QUEUE + "_failed", { durable: true });
+    await ch.assertQueue(REAP_QUEUE, { durable: true });
     // as long as the queue is filled, msg are not ACKed
     // server sends as long as there are less than `prefetch` unACKed
     await ch.prefetch(BATCHSIZE);
@@ -178,6 +179,16 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 m.properties.headers.notify,
                 new Buffer("phase_update"))
         });
+        if (DOREAPMATCH)
+            await Promise.map(telemetry_objects, async (t) =>
+                await ch.sendToQueue(REAP_QUEUE, new Buffer(
+                    JSON.stringify({
+                        match_api_id: t.match_api_id,
+                        start: t.start < 0? 0 : t.start,  // TODO see below
+                        end: t.end
+                    }), { persistent: true })
+                )
+            );
     }
 
     // finish a whole batch
