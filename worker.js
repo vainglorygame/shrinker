@@ -126,9 +126,6 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
 
     // wrap process() in message handler
     async function tryProcess() {
-        const msgs = new Set(msg_buffer);
-        msg_buffer.clear();
-
         profiler.done("buffer filled");
         profiler = undefined;
 
@@ -136,12 +133,20 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
             telemetries: telemetry_data.size
         });
 
+        const msgs = new Set(msg_buffer);
+        msg_buffer.clear();
+        const telemetry_objects = new Set(telemetry_data);
+        telemetry_data.clear();
+
         // clean up to allow processor to accept while we wait for db
         clearTimeout(idle_timer);
         clearTimeout(load_timer);
 
+        idle_timer = undefined;
+        load_timer = undefined;
+
         try {
-            await process();
+            await process(telemetry_objects);
         } catch (err) {
             if (err instanceof Seq.TimeoutError) {
                 // deadlocks / timeout
@@ -176,12 +181,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
     }
 
     // finish a whole batch
-    async function process() {
-        const telemetry_objects = new Set(telemetry_data);
-        idle_timer = undefined;
-        load_timer = undefined;
-        telemetry_data.clear();
-
+    async function process(telemetry_objects) {
         // aggregate record objects to do a bulk insert
         let participant_phase_records = [];
 
