@@ -50,6 +50,15 @@ function* chunks(arr) {
         yield arr.slice(c, c+CHUNKSIZE);
 }
 
+// MariaDB doesn't accept `COLUMN_CREATE()`
+// so this is a helper to return either Seq expression or ""
+function dynamicColumn(arr) {
+    if (arr.length == 0)
+        return "";
+    else
+        return Seq.fn("COLUMN_CREATE", arr);
+}
+
 amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
     global.process.on("SIGINT", () => {
         rabbit.close();
@@ -449,57 +458,153 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     : acc
                 , -1),
                 items: null,  // TODO
-                item_grants: JSON.stringify(telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "BuyItem"
-                    ? acc.concat(item_db_map.get(api_name_mappings.get(ev.payload.Item)))
-                    : acc
-                , [])),
-                item_sells: JSON.stringify(telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "SellItem"
-                    ? acc.concat(item_db_map.get(api_name_mappings.get(ev.payload.Item)))
-                    : acc
-                , [])),
-                ability_levels: JSON.stringify(telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "LearnAbility"
-                    ? acc.concat([ [ api_name_mappings.get(ev.payload.Ability).split(" ")[1],
-                        ev.offset ] ])
-                    : acc
-                , [])),
-                ability_uses: JSON.stringify(telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "UseAbility"
-                    && ["A", "B", "C"].indexOf(
-                        api_name_mappings.get(ev.payload.Ability).split(" ")[1]
-                    ) != -1
-                    ? acc.concat([ [ api_name_mappings.get(ev.payload.Ability).split(" ")[1],
-                        ev.offset ] ])
-                    : acc
-                , [])),
-                ability_damage: JSON.stringify(telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && isAbility(ev.payload.Source)  // TODO
-                    && api_name_mappings.has(ev.payload.Source)
-                    && ["A", "B", "C"].indexOf(
-                        api_name_mappings.get(ev.payload.Source).split(" ")[1]
-                    ) != -1  // TODO refactor here
-                    ? acc.concat([ [ api_name_mappings.get(ev.payload.Source).split(" ")[1],
-                          ev.payload.Damage, ev.offset ] ])
-                    : acc
-                , [])),
-                item_uses: JSON.stringify(telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "UseItemAbility"
-                    ? acc.concat([ [ item_db_map.get(api_name_mappings.get(ev.payload.Ability)),
-                          ev.offset ] ])
-                    : acc
-                , [])),
+                // TODO rm some duplicated code here
+                // { item id: count }
+                item_grants: dynamicColumn([].concat(...
+                    // key, value, key, value, …
+                    telemetry.data.filter((ev, idx) =>
+                        ev.actor == p
+                        && ev.type == "BuyItem"
+                        // filter for first event with same item
+                        && telemetry.data.findIndex((_ev) =>
+                            _ev.actor == p
+                            && _ev.type == ev.type
+                            && _ev.payload.Item == ev.payload.Item
+                        ) == idx
+                    ).map((ev) => [
+                        item_db_map.get(api_name_mappings.get(ev.payload.Item)),
+                        // count(*)
+                        telemetry.data.filter((_ev) =>
+                            _ev.actor == ev.actor
+                            && _ev.type == ev.type
+                            && _ev.payload.Item == ev.payload.Item
+                        ).length
+                    ])
+                )),
+                item_sells: dynamicColumn([].concat(...
+                    telemetry.data.filter((ev, idx) =>
+                        ev.actor == p
+                        && ev.type == "SellItem"
+                        // filter for first event with same item
+                        && telemetry.data.findIndex((_ev) =>
+                            _ev.actor == p
+                            && _ev.type == ev.type
+                            && _ev.payload.Item == ev.payload.Item
+                        ) == idx
+                    ).map((ev) => [
+                        item_db_map.get(api_name_mappings.get(ev.payload.Item)),
+                        // count(*)
+                        telemetry.data.filter((_ev) =>
+                            _ev.actor == ev.actor
+                            && _ev.type == ev.type
+                            && _ev.payload.Item == ev.payload.Item
+                        ).length
+                    ])
+                )),
+                // { ABC: max level }
+                ability_levels: dynamicColumn([].concat(...
+                    telemetry.data.filter((ev) =>
+                        ev.actor == p
+                        && ev.type == "LearnAbility"
+                        // filter for event with highest level
+                        && telemetry.data.findIndex((_ev) =>
+                            _ev.actor == ev.actor
+                            && _ev.type == ev.type
+                            && _ev.payload.Level > ev.payload.Level
+                        ) == -1
+                    ).map((ev) => [
+                        api_name_mappings.get(ev.payload.Ability).split(" ")[1],
+                        ev.payload.Level
+                    ])
+                )),
+                // { ABC: count }
+                ability_uses: dynamicColumn([].concat(...
+                    telemetry.data.filter((ev, idx) =>
+                        ev.actor == p
+                        && ev.type == "UseAbility"
+                        && ["A", "B", "C"].indexOf(
+                            api_name_mappings.get(ev.payload.Ability).split(" ")[1]
+                        ) != -1
+                        // filter whether this is the first
+                        && telemetry.data.findIndex((_ev) =>
+                            _ev.actor == p
+                            && _ev.type == ev.type
+                            && ["A", "B", "C"].indexOf(
+                                api_name_mappings.get(ev.payload.Ability).split(" ")[1]
+                            ) != -1
+                        ) == idx
+                    ).map((ev) => [
+                        api_name_mappings.get(ev.payload.Ability).split(" ")[1],
+                        // count(*)
+                        telemetry.data.filter((_ev) =>
+                            _ev.actor == ev.actor
+                            && _ev.type == ev.type
+                            && ["A", "B", "C"].indexOf(
+                                api_name_mappings.get(ev.payload.Ability).split(" ")[1]
+                            ) != -1
+                        ).length
+                    ])
+                )),
+                // { ABC, AA, AA crit: sum }
+                ability_damage: dynamicColumn([].concat(...
+                    telemetry.data.filter((ev, idx) =>
+                        ev.actor == p
+                        && ev.type == "DealDamage"
+                        && ev.payload.IsHero == 1
+                        && isAbility(ev.payload.Source)
+                        && api_name_mappings.has(ev.payload.Source)
+                        && ["A", "B", "C"].indexOf(
+                            api_name_mappings.get(ev.payload.Source).split(" ")[1]
+                        ) != -1
+                        // filter for first
+                        && telemetry.data.findIndex((_ev) =>
+                            _ev.actor == ev.actor
+                            && _ev.type == ev.type
+                            && _ev.payload.IsHero == ev.payload.IsHero
+                            && isAbility(ev.payload.Source)
+                            && api_name_mappings.has(ev.payload.Source)
+                            && ["A", "B", "C"].indexOf(
+                                api_name_mappings.get(ev.payload.Source).split(" ")[1]
+                            ) != -1
+                        ) == idx
+                    ).map((ev) => [
+                        api_name_mappings.get(ev.payload.Source).split(" ")[1],
+                        // sum(*)
+                        telemetry.data.reduce((acc, _ev) =>
+                            _ev.actor == ev.actor
+                            && _ev.type == ev.type
+                            && _ev.payload.IsHero == ev.payload.IsHero
+                            && isAbility(ev.payload.Source)
+                            && api_name_mappings.has(ev.payload.Source)
+                            && ["A", "B", "C"].indexOf(
+                                api_name_mappings.get(ev.payload.Source).split(" ")[1]
+                            ) != -1
+                            ? acc + _ev.payload.Damage
+                            : acc
+                        , 0)
+                    ])
+                )),
+                item_uses: dynamicColumn([].concat(...
+                    telemetry.data.filter((ev, idx) =>
+                        ev.actor == p
+                        && ev.type == "UseItemAbility"
+                        // filter for first event with same item
+                        && telemetry.data.findIndex((_ev) =>
+                            _ev.actor == p
+                            && _ev.type == ev.type
+                            && _ev.payload.Ability == ev.payload.Ability
+                        ) == idx
+                    ).map((ev) => [
+                        item_db_map.get(api_name_mappings.get(ev.payload.Ability)),
+                        // count(*)
+                        telemetry.data.filter((_ev) =>
+                            _ev.actor == ev.actor
+                            && _ev.type == ev.type
+                            && _ev.payload.Ability == ev.payload.Ability
+                        ).length
+                    ])
+                )),
                 player_damage: null,  // TODO
-                items: null,  // TODO
                 draft_position: telemetry.data.filter((ev) =>
                     ev.type == "HeroSelect").indexOf(
                         telemetry.data.filter((ev) =>
@@ -531,7 +636,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
             await Promise.map(chunks(participant_phase_records), async (p_p_r) =>
                 model.ParticipantPhases.bulkCreate(p_p_r, {
                     ignoreDuplicates: true,
-                    updateOnDuplicate: [],
+                    //updateOnDuplicate: [],
                     transaction: transaction
                 }), { concurrency: MAXCONNS }
             );
