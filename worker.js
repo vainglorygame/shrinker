@@ -450,6 +450,39 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ? acc + ev.payload.Damage
                     : acc
                 , 0),
+                // max level of A
+                ability_a_level: telemetry.data.filter((ev) =>
+                    ev.actor == p
+                    && ev.type == "LearnAbility"
+                    && api_name_mappings.get(ev.payload.Ability)
+                        .split(" ")[1] == "A"
+                ).reduce((acc, ev) =>
+                    ev.payload.Level > acc
+                    ? ev.payload.Level
+                    : acc
+                , 0),
+                // max level of B
+                ability_b_level: telemetry.data.filter((ev) =>
+                    ev.actor == p
+                    && ev.type == "LearnAbility"
+                    && api_name_mappings.get(ev.payload.Ability)
+                        .split(" ")[1] == "B",
+                ).reduce((acc, ev) =>
+                    ev.payload.Level > acc
+                    ? ev.payload.Level
+                    : acc
+                , 0),
+                // max level of C
+                ability_c_level: telemetry.data.filter((ev) =>
+                    ev.actor == p
+                    && ev.type == "LearnAbility"
+                    && api_name_mappings.get(ev.payload.Ability)
+                        .split(" ")[1] == "C",
+                ).reduce((acc, ev) =>
+                    ev.payload.Level > acc
+                    ? ev.payload.Level
+                    : acc
+                , 0),
                 hero_level: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "LevelUp"
@@ -501,89 +534,144 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                         ).length
                     ])
                 )),
-                // { ABC: max level }
-                ability_levels: dynamicColumn([].concat(...
-                    telemetry.data.filter((ev) =>
-                        ev.actor == p
-                        && ev.type == "LearnAbility"
-                        // filter for event with highest level
-                        && telemetry.data.findIndex((_ev) =>
-                            _ev.actor == ev.actor
-                            && _ev.type == ev.type
-                            && _ev.payload.Level > ev.payload.Level
-                        ) == -1
-                    ).map((ev) => [
-                        api_name_mappings.get(ev.payload.Ability).split(" ")[1],
-                        ev.payload.Level
-                    ])
-                )),
-                // { ABC: count }
-                ability_uses: dynamicColumn([].concat(...
-                    telemetry.data.filter((ev, idx) =>
-                        ev.actor == p
-                        && ev.type == "UseAbility"
-                        && ["A", "B", "C"].indexOf(
-                            api_name_mappings.get(ev.payload.Ability).split(" ")[1]
-                        ) != -1
-                        // filter whether this is the first
-                        && telemetry.data.findIndex((_ev) =>
-                            _ev.actor == p
-                            && _ev.type == ev.type
-                            && ["A", "B", "C"].indexOf(
-                                api_name_mappings.get(ev.payload.Ability).split(" ")[1]
-                            ) != -1
-                        ) == idx
-                    ).map((ev) => [
-                        api_name_mappings.get(ev.payload.Ability).split(" ")[1],
-                        // count(*)
-                        telemetry.data.filter((_ev) =>
-                            _ev.actor == ev.actor
-                            && _ev.type == ev.type
-                            && ["A", "B", "C"].indexOf(
-                                api_name_mappings.get(ev.payload.Ability).split(" ")[1]
-                            ) != -1
-                        ).length
-                    ])
-                )),
-                // { ABC, AA, AA crit: sum }
-                ability_damage: dynamicColumn([].concat(...
-                    telemetry.data.filter((ev, idx) =>
-                        ev.actor == p
-                        && ev.type == "DealDamage"
-                        && ev.payload.IsHero == 1
-                        && isAbility(ev.payload.Source)
-                        && api_name_mappings.has(ev.payload.Source)
-                        && ["A", "B", "C"].indexOf(
-                            api_name_mappings.get(ev.payload.Source).split(" ")[1]
-                        ) != -1
-                        // filter for first
-                        && telemetry.data.findIndex((_ev) =>
-                            _ev.actor == ev.actor
-                            && _ev.type == ev.type
-                            && _ev.payload.IsHero == ev.payload.IsHero
-                            && isAbility(ev.payload.Source)
-                            && api_name_mappings.has(ev.payload.Source)
-                            && ["A", "B", "C"].indexOf(
-                                api_name_mappings.get(ev.payload.Source).split(" ")[1]
-                            ) != -1
-                        ) == idx
-                    ).map((ev) => [
-                        api_name_mappings.get(ev.payload.Source).split(" ")[1],
-                        // sum(*)
-                        telemetry.data.reduce((acc, _ev) =>
-                            _ev.actor == ev.actor
-                            && _ev.type == ev.type
-                            && _ev.payload.IsHero == ev.payload.IsHero
-                            && isAbility(ev.payload.Source)
-                            && api_name_mappings.has(ev.payload.Source)
-                            && ["A", "B", "C"].indexOf(
-                                api_name_mappings.get(ev.payload.Source).split(" ")[1]
-                            ) != -1
-                            ? acc + _ev.payload.Damage
-                            : acc
-                        , 0)
-                    ])
-                )),
+                ability_a_uses: telemetry.data.filter((ev) =>
+                    ev.actor == p
+                    && ev.type == "UseAbility"
+                    && api_name_mappings.get(ev.payload.Ability)
+                        .split(" ")[1] == "A"
+                ).length,
+                ability_b_uses: telemetry.data.filter((ev) =>
+                    ev.actor == p
+                    && ev.type == "UseAbility"
+                    && api_name_mappings.get(ev.payload.Ability)
+                        .split(" ")[1] == "B"
+                ).length,
+                ability_c_uses: telemetry.data.filter((ev) =>
+                    ev.actor == p
+                    && ev.type == "UseAbility"
+                    && api_name_mappings.get(ev.payload.Ability)
+                        .split(" ")[1] == "C"
+                ).length,
+                ability_a_damage_true: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "A"
+                    ? acc + ev.payload.Damage
+                    : acc
+                , 0),
+                ability_a_damage_dealt: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "A"
+                    ? acc + ev.payload.Delt
+                    : acc
+                , 0),
+                ability_b_damage_true: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "B"
+                    ? acc + ev.payload.Damage
+                    : acc
+                , 0),
+                ability_b_damage_dealt: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "B"
+                    ? acc + ev.payload.Delt
+                    : acc
+                , 0),
+                ability_c_damage_true: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "C"
+                    ? acc + ev.payload.Damage
+                    : acc
+                , 0),
+                ability_c_damage_dealt: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "C"
+                    ? acc + ev.payload.Delt
+                    : acc
+                , 0),
+                ability_perk_damage_true: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "perk"
+                    ? acc + ev.payload.Damage
+                    : acc
+                , 0),
+                ability_perk_damage_dealt: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "perk"
+                    ? acc + ev.payload.Delt
+                    : acc
+                , 0),
+                ability_aa_damage_true: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "AA"
+                    ? acc + ev.payload.Damage
+                    : acc
+                , 0),
+                ability_aa_damage_dealt: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "AA"
+                    ? acc + ev.payload.Delt
+                    : acc
+                , 0),
+                ability_aacrit_damage_true: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "AAcrit"
+                    ? acc + ev.payload.Damage
+                    : acc
+                , 0),
+                ability_aa_damage_dealt: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "DealDamage"
+                    && ev.payload.IsHero == 1
+                    && isAbility(ev.payload.Source)
+                    && api_name_mappings.get(ev.payload.Source)
+                        .split(" ")[1] == "AAcrit"
+                    ? acc + ev.payload.Delt
+                    : acc
+                , 0),
                 item_uses: dynamicColumn([].concat(...
                     telemetry.data.filter((ev, idx) =>
                         ev.actor == p
