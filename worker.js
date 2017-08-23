@@ -17,7 +17,7 @@ const RABBITMQ_URI = process.env.RABBITMQ_URI,
     QUEUE = process.env.QUEUE || "shrink",
     LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
     // matches + players, 5 players with 50 matches as default
-    BATCHSIZE = parseInt(process.env.BATCHSIZE) || 5 * (50 + 1),
+    BATCHSIZE = parseInt(process.env.BATCHSIZE) || 1,  //|| 5 * (50 + 1),
     // maximum number of elements to be inserted in one statement
     CHUNKSIZE = parseInt(process.env.CHUNKSIZE) || 100,
     MAXCONNS = parseInt(process.env.MAXCONNS) || 10,  // how many concurrent actions
@@ -107,7 +107,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
     if (item_db_map.size == 0 ||
         hero_db_map.size == 0) {
         logger.error("mapping tables are not seeded!!! quitting");
-        process.exit();
+        global.process.exit();
     }
 
     // buffers that will be filled until BATCHSIZE is reached
