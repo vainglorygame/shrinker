@@ -494,45 +494,38 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 // TODO rm some duplicated code here
                 // { item id: count }
                 item_grants: dynamicColumn([].concat(...
+                (() => {
+                    // TODO refactor this
+                    const items = new Map();
                     // key, value, key, value, …
-                    telemetry.data.filter((ev, idx) =>
-                        ev.actor == p
-                        && ev.type == "BuyItem"
-                        // filter for first event with same item
-                        && telemetry.data.findIndex((_ev) =>
-                            _ev.actor == p
-                            && _ev.type == ev.type
-                            && _ev.payload.Item == ev.payload.Item
-                        ) == idx
-                    ).map((ev) => [
-                        item_db_map.get(api_name_mappings.get(ev.payload.Item)),
-                        // count(*)
-                        telemetry.data.filter((_ev) =>
-                            _ev.actor == ev.actor
-                            && _ev.type == ev.type
-                            && _ev.payload.Item == ev.payload.Item
-                        ).length
-                    ])
+                    telemetry.data.forEach((ev) => {
+                        if (ev.actor == p && ev.type == "BuyItem") {
+                            const item = item_db_map.get(
+                                api_name_mappings.get(ev.payload.Item)
+                            );
+                            if (!items.has(item)) items.set(item, 0);
+                            items.set(item, items.get(item)+1);
+                        }
+                    });
+                    return [...items.entries()];
+                })()
                 )),
                 item_sells: dynamicColumn([].concat(...
-                    telemetry.data.filter((ev, idx) =>
-                        ev.actor == p
-                        && ev.type == "SellItem"
-                        // filter for first event with same item
-                        && telemetry.data.findIndex((_ev) =>
-                            _ev.actor == p
-                            && _ev.type == ev.type
-                            && _ev.payload.Item == ev.payload.Item
-                        ) == idx
-                    ).map((ev) => [
-                        item_db_map.get(api_name_mappings.get(ev.payload.Item)),
-                        // count(*)
-                        telemetry.data.filter((_ev) =>
-                            _ev.actor == ev.actor
-                            && _ev.type == ev.type
-                            && _ev.payload.Item == ev.payload.Item
-                        ).length
-                    ])
+                (() => {
+                    const items = new Map();
+                    // key, value, key, value, …
+                    telemetry.data.forEach((ev) => {
+                        if (ev.actor == p && ev.type == "SellItem") {
+                            const item = item_db_map.get(
+                                         api_name_mappings.get(ev.payload.Item));
+                            if (!items.has(item)) {
+                                items.set(item, 0);
+                            }
+                            items.set(item, items.get(item)+1);
+                        }
+                    });
+                    return [...items.entries()];
+                })()
                 )),
                 ability_a_uses: telemetry.data.filter((ev) =>
                     ev.actor == p
@@ -673,24 +666,20 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     : acc
                 , 0),
                 item_uses: dynamicColumn([].concat(...
-                    telemetry.data.filter((ev, idx) =>
-                        ev.actor == p
-                        && ev.type == "UseItemAbility"
-                        // filter for first event with same item
-                        && telemetry.data.findIndex((_ev) =>
-                            _ev.actor == p
-                            && _ev.type == ev.type
-                            && _ev.payload.Ability == ev.payload.Ability
-                        ) == idx
-                    ).map((ev) => [
-                        item_db_map.get(api_name_mappings.get(ev.payload.Ability)),
-                        // count(*)
-                        telemetry.data.filter((_ev) =>
-                            _ev.actor == ev.actor
-                            && _ev.type == ev.type
-                            && _ev.payload.Ability == ev.payload.Ability
-                        ).length
-                    ])
+                (() => {
+                    const items = new Map();
+                    // key, value, key, value, …
+                    telemetry.data.forEach((ev) => {
+                        if (ev.actor == p && ev.type == "UseItemAbility") {
+                            const item = item_db_map.get(
+                                api_name_mappings.get(ev.payload.Ability)
+                            );
+                            if (!items.has(item)) items.set(item, 0);
+                            items.set(item, items.get(item)+1);
+                        }
+                    });
+                    return [...items.entries()];
+                })()
                 )),
                 player_damage: null,  // TODO
                 draft_position: telemetry.data.filter((ev) =>
