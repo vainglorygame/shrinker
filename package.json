@@ -5,6 +5,7 @@
   "main": "worker.js",
   "dependencies": {
     "amqplib": "^0.5.1",
+    "cache-manager": "^2.4.0",
     "mysql2": "^1.4.0",
     "sequelize": "^4.4.2",
     "winston": "^2.3.1",
