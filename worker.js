@@ -9,6 +9,7 @@ const amqp = require("amqplib"),
     winston = require("winston"),
     loggly = require("winston-loggly-bulk"),
     Seq = require("sequelize"),
+    cacheManager = require("cache-manager"),
     api_name_mappings = require("../orm/mappings").map,
     isAbility = require("../orm/mappings").isAbility;
 
@@ -20,7 +21,7 @@ const RABBITMQ_URI = process.env.RABBITMQ_URI,
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 5 * (50 + 1),
     // maximum number of elements to be inserted in one statement
     CHUNKSIZE = parseInt(process.env.CHUNKSIZE) || 100,
-    MAXCONNS = parseInt(process.env.MAXCONNS) || 10,  // how many concurrent actions
+    MAXCONNS = parseInt(process.env.MAXCONNS) || 1,  // how many concurrent actions
     DOANALYZEMATCH = process.env.DOANALYZEMATCH == "true",
     ANALYZE_QUEUE = process.env.ANALYZE_QUEUE || "analyze",
     LOAD_TIMEOUT = parseFloat(process.env.LOAD_TIMEOUT) || 5000, // ms
@@ -63,6 +64,8 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
             max: MAXCONNS
         }
     });
+
+    const cache = cacheManager.caching({store: "memory", max: 1000, ttl: 60 });
 
     const ch = await rabbit.createChannel();
     await ch.assertQueue(QUEUE, { durable: true });
@@ -187,24 +190,32 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
 
         // data from Telemetry, one phase (early/mid/late/…) per obj
         await Promise.map(telemetry_objects, async (telemetry) => {
+            let dbpreload_profiler = logger.startTimer();
+
             // api -> telemetry format
             const sideToTeam = (s) => s == "left/blue"? "Left" : "Right",
                 // yes there is yet another format and yes it's strings
                 sideToTeamNo = (s) => s == "left/blue"? "1" : "2";
             // get match participant references
-            const participants = await model.Participant.findAll({
-                where: { match_api_id: telemetry.match_api_id },
-                include: [ {  // TODO rm once pushed to participant
-                    model: model.Roster,
-                    attributes: [ "side" ]
-                } ]
-            }).map((p) => { return {
-                api_id: p.api_id,
-                player_api_id: p.player_api_id,
-                actor: p.actor,
-                team: sideToTeam(p.roster.side),
-                teamNo: sideToTeamNo(p.roster.side)
-            } });
+            const participants =
+                (await cache.wrap(telemetry.match_api_id, async () =>
+                    await model.Participant.findAll({
+                        where: { match_api_id: telemetry.match_api_id },
+                        attributes: [ "api_id", "player_api_id", "actor" ],
+                        include: [ {  // TODO rm once pushed to participant
+                            model: model.Roster,
+                            attributes: [ "side" ]
+                        } ]
+                    })
+                ) ).map((p) => { return {
+                    api_id: p.api_id,
+                    player_api_id: p.player_api_id,
+                    actor: p.actor,
+                    team: sideToTeam(p.roster.side),
+                    teamNo: sideToTeamNo(p.roster.side)
+                } });
+
+            dbpreload_profiler.done("loading relationships from db");
 
             // seconds since epoch; first spawn time
             const matchstart = new Date(Date.parse(telemetry.match_start)).getTime() / 1000;
@@ -510,7 +521,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
             } });
             participant_phase_records = participant_phase_records.concat(
                 participants_phase);  // TODO calc stats
-        });
+        }, { concurrency: MAXCONNS });
 
         let transaction_profiler = logger.startTimer();
         // now access db
