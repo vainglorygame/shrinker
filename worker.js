@@ -477,7 +477,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "LearnAbility"
                     && api_name_mappings.get(ev.payload.Ability)
-                        .split(" ")[1] == "B",
+                        .split(" ")[1] == "B"
                 ).reduce((acc, ev) =>
                     ev.payload.Level > acc
                     ? ev.payload.Level
@@ -488,7 +488,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "LearnAbility"
                     && api_name_mappings.get(ev.payload.Ability)
-                        .split(" ")[1] == "C",
+                        .split(" ")[1] == "C"
                 ).reduce((acc, ev) =>
                     ev.payload.Level > acc
                     ? ev.payload.Level
