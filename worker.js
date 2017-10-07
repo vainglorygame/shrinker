@@ -246,6 +246,10 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 // seconds after this phase's start
                 t.offset = new Date(Date.parse(t.time)).getTime() / 1000 - matchstart;
 
+                // patch schema, Delt -> Dealt from 2.9 onwards
+                // see https://github.com/gamelocker/vainglory-assets/pull/308
+                t.payload.Dealt = t.payload.Delt;
+
                 // linking
                 if (t.type == "HeroSelect")
                     t.actor = participants.filter((p) =>
@@ -400,7 +404,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.TargetIsHero == 1
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 dmg_dealt_kraken: telemetry.data.reduce((acc, ev) =>
@@ -409,35 +413,35 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     && ["*Kraken_Jungle*",
                         "*Kraken_Captured*"
                     ].indexOf(ev.payload.Target) != -1
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 dmg_dealt_turret: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.Target == "*Turret*"
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 dmg_dealt_vain_turret: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.Target == "*VainTurret*"
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 dmg_dealt_others: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.TargetIsHero == 0
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 dmg_rcvd_dealt_hero: telemetry.data.reduce((acc, ev) =>
                     ev.target == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 dmg_rcvd_true_hero: telemetry.data.reduce((acc, ev) =>
@@ -451,7 +455,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.target == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 0
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 dmg_rcvd_true_others: telemetry.data.reduce((acc, ev) =>
@@ -573,7 +577,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "A"
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 ability_b_damage_true: telemetry.data.reduce((acc, ev) =>
@@ -593,7 +597,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "B"
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 ability_c_damage_true: telemetry.data.reduce((acc, ev) =>
@@ -613,7 +617,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "C"
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 ability_perk_damage_true: telemetry.data.reduce((acc, ev) =>
@@ -633,7 +637,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "perk"
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 ability_aa_damage_true: telemetry.data.reduce((acc, ev) =>
@@ -653,7 +657,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "AA"
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 ability_aacrit_damage_true: telemetry.data.reduce((acc, ev) =>
@@ -673,7 +677,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "AAcrit"
-                    ? acc + ev.payload.Delt
+                    ? acc + ev.payload.Dealt
                     : acc
                 , 0),
                 item_uses: dynamicColumn([].concat(...
