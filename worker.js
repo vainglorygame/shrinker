@@ -557,19 +557,19 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     return [...items.entries()];
                 })()
                 )),
-                ability_a_uses: telemetry.data.filter((ev) =>
+                ability_a_use: telemetry.data.filter((ev) =>
                     ev.actor == p
                     && ev.type == "UseAbility"
                     && api_name_mappings.get(ev.payload.Ability)
                         .split(" ")[1] == "A"
                 ).length,
-                ability_b_uses: telemetry.data.filter((ev) =>
+                ability_b_use: telemetry.data.filter((ev) =>
                     ev.actor == p
                     && ev.type == "UseAbility"
                     && api_name_mappings.get(ev.payload.Ability)
                         .split(" ")[1] == "B"
                 ).length,
-                ability_c_uses: telemetry.data.filter((ev) =>
+                ability_c_use: telemetry.data.filter((ev) =>
                     ev.actor == p
                     && ev.type == "UseAbility"
                     && api_name_mappings.get(ev.payload.Ability)
