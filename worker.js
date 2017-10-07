@@ -685,7 +685,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ? acc + ev.payload.Damage
                     : acc
                 , 0),
-                ability_aa_damage_dealt: telemetry.data.reduce((acc, ev) =>
+                ability_aacrit_damage_dealt: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
