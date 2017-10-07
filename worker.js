@@ -357,6 +357,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "KillActor"
                     && ev.payload.Killed == "*JungleMinion_GoldMiner*"
+                    || ev.payload.Killed == "*JungleMinion_Blitz_MiddleSentry*"
                 ).length,
                 kraken_captures: telemetry.data.filter((ev) =>
                     ev.actor == p
