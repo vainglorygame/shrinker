@@ -287,6 +287,20 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.Killed
                         && p.team == t.payload.KilledTeam)[0];
+                // heal actor (since 2.9)
+                if (t.type == "HealTarget"
+                    && t.payload.IsHero == 1
+                    && t.payload.Source != "Buff_SpawnStage_Recharge") // TODO LOL what?
+                    t.target = participants.filter((p) =>
+                        p.actor == t.payload.TargetActor
+                        && p.team == t.payload.TargetTeam)[0];
+                // heal target (since 2.9)
+                if (t.type == "HealTarget"
+                    && t.payload.TargetIsHero == 1
+                    && t.payload.Source != "Buff_SpawnStage_Recharge")
+                    t.target = participants.filter((p) =>
+                        p.actor == t.payload.TargetActor
+                        && p.team == t.payload.TargetTeam)[0];
             });
 
             const participants_phase = participants.map((p) => { return {
@@ -715,6 +729,71 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                             && ev.actor == p)
                         .map((sel) => sel.payload.Hero)[0]  // can be null
                 )),// traits calculated later
+                // since 2.9
+                // theoretical heal from actor to hero
+                heal_heal_hero: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "HealTarget"
+                    && ev.payload.TargetIsHero == 1
+                    ? acc + ev.payload.Heal
+                    : acc
+                , 0),
+                // actual heal from actor to hero
+                heal_healed_hero: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "HealTarget"
+                    && ev.payload.TargetIsHero == 1
+                    ? acc + ev.payload.Healed
+                    : acc
+                , 0),
+                // theoretical heal from actor to other
+                heal_heal_other: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "HealTarget"
+                    && ev.payload.TargetIsHero != 1
+                    ? acc + ev.payload.Heal
+                    : acc
+                , 0),
+                // actual heal from actor to other
+                heal_healed_other: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "HealTarget"
+                    && ev.payload.TargetIsHero != 1
+                    ? acc + ev.payload.Healed
+                    : acc
+                , 0),
+                // theoretical heal received from hero
+                heal_rcvd_heal_hero: telemetry.data.reduce((acc, ev) =>
+                    ev.target == p
+                    && ev.type == "HealTarget"
+                    && ev.payload.IsHero == 1
+                    ? acc + ev.payload.Heal
+                    : acc
+                , 0),
+                // actual heal received from hero
+                heal_rcvd_healed_hero: telemetry.data.reduce((acc, ev) =>
+                    ev.target == p
+                    && ev.type == "HealTarget"
+                    && ev.payload.IsHero == 1
+                    ? acc + ev.payload.Healed
+                    : acc
+                , 0),
+                // theoretical heal received from minion
+                heal_rcvd_heal_other: telemetry.data.reduce((acc, ev) =>
+                    ev.target == p
+                    && ev.type == "HealTarget"
+                    && ev.payload.IsHero != 1 // TODO open an issue, is "-1" not "0"
+                    ? acc + ev.payload.Heal
+                    : acc
+                , 0),
+                // actual heal received from minion
+                heal_rcvd_healed_other: telemetry.data.reduce((acc, ev) =>
+                    ev.target == p
+                    && ev.type == "HealTarget"
+                    && ev.payload.IsHero != 1
+                    ? acc + ev.payload.Healed
+                    : acc
+                , 0),
             } });
             participant_phase_records = participant_phase_records.concat(
                 participants_phase);  // TODO calc stats
