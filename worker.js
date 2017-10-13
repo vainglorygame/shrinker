@@ -249,6 +249,9 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 // patch schema, Delt -> Dealt from 2.9 onwards
                 // see https://github.com/gamelocker/vainglory-assets/pull/308
                 t.payload.Dealt = t.payload.Dealt || t.payload.Delt;
+                if (isNaN(t.payload.Dealt)) {
+                    t.payload.Dealt = 0;
+                }
 
                 // linking
                 if (t.type == "HeroSelect")
