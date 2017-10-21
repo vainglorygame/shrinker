@@ -294,9 +294,9 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 if (t.type == "HealTarget"
                     && t.payload.IsHero == 1
                     && t.payload.Source != "Buff_SpawnStage_Recharge") // TODO LOL what?
-                    t.target = participants.filter((p) =>
-                        p.actor == t.payload.TargetActor
-                        && p.team == t.payload.TargetTeam)[0];
+                    t.actor = participants.filter((p) =>
+                        p.actor == t.payload.Actor
+                        && p.team == t.payload.Team)[0];
                 // heal target (since 2.9)
                 if (t.type == "HealTarget"
                     && t.payload.TargetIsHero == 1
