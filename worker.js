@@ -294,7 +294,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 if (t.type == "HealTarget"
                     && t.payload.IsHero == 1
                     && ["Buff_SpawnStage_Recharge", "Buff_Ace"].indexOf(t.payload.Source) == -1  // TODO LOL what?
-                    && t.payload.Team != t.payload.TargetTeam)  // enemies "heal" Ardan due to his perk WTF
+                    && t.payload.Team == t.payload.TargetTeam)  // enemies "heal" Ardan due to his perk WTF
                     t.actor = participants.filter((p) =>
                         p.actor == t.payload.Actor
                         && p.team == t.payload.Team)[0];
