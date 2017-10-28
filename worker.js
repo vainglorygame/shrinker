@@ -293,7 +293,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 // heal actor (since 2.9)
                 if (t.type == "HealTarget"
                     && t.payload.IsHero == 1
-                    && ["Buff_SpawnStage_Recharge", "Buff_Ace"].indexOf(t.payload.Source) != -1  // TODO LOL what?
+                    && ["Buff_SpawnStage_Recharge", "Buff_Ace"].indexOf(t.payload.Source) == -1  // TODO LOL what?
                     && t.payload.Team != t.payload.TargetTeam)  // enemies "heal" Ardan due to his perk WTF
                     t.actor = participants.filter((p) =>
                         p.actor == t.payload.Actor
@@ -301,7 +301,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 // heal target (since 2.9)
                 if (t.type == "HealTarget"
                     && t.payload.TargetIsHero == 1
-                    && ["Buff_SpawnStage_Recharge", "Buff_Ace"].indexOf(t.payload.Source) != -1)
+                    && ["Buff_SpawnStage_Recharge", "Buff_Ace"].indexOf(t.payload.Source) == -1)
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.TargetActor
                         && p.team == t.payload.TargetTeam)[0];
