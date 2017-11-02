@@ -525,6 +525,16 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     : acc
                 , -1),
                 items: null,  // TODO
+                // { array index: item id }
+                item_grants_inorder: dynamicColumn([].concat(...telemetry.data
+                    .filter((ev) => ev.actor == p && ev.type == "BuyItem")
+                    .map((ev, idx) => {
+                        const item = item_db_map.get(
+                            api_name_mappings.get(ev.payload.Item)
+                        );
+                        return [idx, item];
+                    })
+                )),
                 // TODO rm some duplicated code here
                 // { item id: count }
                 item_grants: dynamicColumn([].concat(...
