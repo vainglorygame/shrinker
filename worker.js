@@ -324,6 +324,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 start: telemetry.start < 0? 0 : telemetry.start,  // in seconds
                 end: telemetry.end,
                 participant_api_id: p.api_id,
+                match_api_id: telemetry.match_api_id,
 
                 kills: telemetry.data.filter((ev) =>
                     ev.actor == p
