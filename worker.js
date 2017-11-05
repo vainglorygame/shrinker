@@ -305,6 +305,18 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     t.target = participants.filter((p) =>
                         p.actor == t.payload.TargetActor
                         && p.team == t.payload.TargetTeam)[0];
+                // vampirism actor (since 2.10)
+                if (t.type == "Vampirism"
+                    && t.payload.IsHero == 1)
+                    t.actor = participants.filter((p) =>
+                        p.actor == t.payload.Actor
+                        && p.team == t.payload.Team)[0];
+                // vampirism target (since 2.10)
+                if (t.type == "Vampirism"
+                    && t.payload.TargetIsHero == 1)
+                    t.target = participants.filter((p) =>
+                        p.actor == t.payload.TargetActor
+                        && p.team == t.payload.TargetTeam)[0];
             });
 
             const participants_phase = participants.map((p) => { return {
@@ -761,6 +773,24 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ? acc + ev.payload.Healed
                     : acc
                 , 0),
+                // theoretical heal from actor to ally
+                heal_heal_ally: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.target != p
+                    && ev.type == "HealTarget"
+                    && ev.payload.TargetIsHero == 1
+                    ? acc + ev.payload.Healed
+                    : acc
+                , 0),
+                // actual heal from actor to ally
+                heal_healed_ally: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.target != p
+                    && ev.type == "HealTarget"
+                    && ev.payload.TargetIsHero == 1
+                    ? acc + ev.payload.Healed
+                    : acc
+                , 0),
                 // theoretical heal from actor to other
                 heal_heal_other: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
@@ -791,6 +821,31 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     && ev.type == "HealTarget"
                     && ev.payload.IsHero == 1
                     ? acc + ev.payload.Healed
+                    : acc
+                , 0),
+                // theoretical heal received from ally
+                heal_rcvd_heal_ally: telemetry.data.reduce((acc, ev) =>
+                    ev.target == p
+                    && ev.actor != p
+                    && ev.type == "HealTarget"
+                    && ev.payload.IsHero == 1
+                    ? acc + ev.payload.Heal
+                    : acc
+                , 0),
+                // actual heal received from hero
+                heal_rcvd_healed_ally: telemetry.data.reduce((acc, ev) =>
+                    ev.target == p
+                    && ev.actor != p
+                    && ev.type == "HealTarget"
+                    && ev.payload.IsHero == 1
+                    ? acc + ev.payload.Healed
+                    : acc
+                , 0),
+                // lifesteal
+                heal_rcvd_healed_vamp: telemetry.data.reduce((acc, ev) =>
+                    ev.actor == p
+                    && ev.type == "Vampirism"
+                    ? acc + ev.payload.Vamp
                     : acc
                 , 0),
                 // theoretical heal received from minion
