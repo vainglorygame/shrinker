@@ -11,6 +11,7 @@ const amqp = require("amqplib"),
     Seq = require("sequelize"),
     cacheManager = require("cache-manager"),
     api_name_mappings = require("../orm/mappings").map,
+    crashIfBullshit = require("../orm/mappings").crashIfBullshit,
     isAbility = require("../orm/mappings").isAbility;
 
 const RABBITMQ_URI = process.env.RABBITMQ_URI,
@@ -501,6 +502,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 ability_a_level: telemetry.data.filter((ev) =>
                     ev.actor == p
                     && ev.type == "LearnAbility"
+                    && crashIfBullshit(ev.payload.Ability)
                     && api_name_mappings.get(ev.payload.Ability)
                         .split(" ")[1] == "A"
                 ).reduce((acc, ev) =>
@@ -512,6 +514,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 ability_b_level: telemetry.data.filter((ev) =>
                     ev.actor == p
                     && ev.type == "LearnAbility"
+                    && crashIfBullshit(ev.payload.Ability)
                     && api_name_mappings.get(ev.payload.Ability)
                         .split(" ")[1] == "B"
                 ).reduce((acc, ev) =>
@@ -523,6 +526,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 ability_c_level: telemetry.data.filter((ev) =>
                     ev.actor == p
                     && ev.type == "LearnAbility"
+                    && crashIfBullshit(ev.payload.Ability)
                     && api_name_mappings.get(ev.payload.Ability)
                         .split(" ")[1] == "C"
                 ).reduce((acc, ev) =>
@@ -542,6 +546,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 item_grants_inorder: dynamicColumn([].concat(...telemetry.data
                     .filter((ev) => ev.actor == p && ev.type == "BuyItem")
                     .map((ev, idx) => {
+                        crashIfBullshit(ev.payload.Item);
                         const item = item_db_map.get(
                             api_name_mappings.get(ev.payload.Item)
                         );
@@ -557,6 +562,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     // key, value, key, value, …
                     telemetry.data.forEach((ev) => {
                         if (ev.actor == p && ev.type == "BuyItem") {
+                            crashIfBullshit(ev.payload.Item);
                             const item = item_db_map.get(
                                 api_name_mappings.get(ev.payload.Item)
                             );
@@ -573,6 +579,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     // key, value, key, value, …
                     telemetry.data.forEach((ev) => {
                         if (ev.actor == p && ev.type == "SellItem") {
+                            crashIfBullshit(ev.payload.Item);
                             const item = item_db_map.get(
                                          api_name_mappings.get(ev.payload.Item));
                             if (!items.has(item)) {
@@ -587,18 +594,21 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 ability_a_use: telemetry.data.filter((ev) =>
                     ev.actor == p
                     && ev.type == "UseAbility"
+                    && crashIfBullshit(ev.payload.Ability),
                     && api_name_mappings.get(ev.payload.Ability)
                         .split(" ")[1] == "A"
                 ).length,
                 ability_b_use: telemetry.data.filter((ev) =>
                     ev.actor == p
                     && ev.type == "UseAbility"
+                    && crashIfBullshit(ev.payload.Ability),
                     && api_name_mappings.get(ev.payload.Ability)
                         .split(" ")[1] == "B"
                 ).length,
                 ability_c_use: telemetry.data.filter((ev) =>
                     ev.actor == p
                     && ev.type == "UseAbility"
+                    && crashIfBullshit(ev.payload.Ability),
                     && api_name_mappings.get(ev.payload.Ability)
                         .split(" ")[1] == "C"
                 ).length,
@@ -606,6 +616,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source),
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "A"
@@ -616,6 +627,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "A"
@@ -626,6 +638,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "B"
@@ -636,6 +649,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "B"
@@ -646,6 +660,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "C"
@@ -656,6 +671,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "C"
@@ -666,6 +682,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "perk"
@@ -676,6 +693,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "perk"
@@ -686,6 +704,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "AA"
@@ -696,6 +715,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "AA"
@@ -706,6 +726,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "AAcrit"
@@ -716,6 +737,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     ev.actor == p
                     && ev.type == "DealDamage"
                     && ev.payload.IsHero == 1
+                    && crashIfBullshit(ev.payload.Source);
                     && isAbility(ev.payload.Source)
                     && api_name_mappings.get(ev.payload.Source)
                         .split(" ")[1] == "AAcrit"
@@ -728,6 +750,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                     // key, value, key, value, …
                     telemetry.data.forEach((ev) => {
                         if (ev.actor == p && ev.type == "UseItemAbility") {
+                            crashIfBullshit(ev.payload.Ability);
                             const item = item_db_map.get(
                                 api_name_mappings.get(ev.payload.Ability)
                             );
