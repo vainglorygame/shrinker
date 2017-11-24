@@ -238,15 +238,9 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
 
             dbpreload_profiler.done("loading relationships from db");
 
-            // seconds since epoch; first spawn time
-            const matchstart = new Date(Date.parse(telemetry.match_start)).getTime() / 1000;
-
             // link participant <-> Telemetry actor/target
             // available as `.actor` or as `.target`
             telemetry.data.forEach((t) => {
-                // seconds after this phase's start
-                t.offset = new Date(Date.parse(t.time)).getTime() / 1000 - matchstart;
-
                 // patch schema, Delt -> Dealt from 2.9 onwards
                 // see https://github.com/gamelocker/vainglory-assets/pull/308
                 t.payload.Dealt = t.payload.Dealt || t.payload.Delt;
