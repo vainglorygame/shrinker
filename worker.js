@@ -321,441 +321,30 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 participant_api_id: p.api_id,
                 match_api_id: telemetry.match_api_id,
 
-                kills: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "KillActor"
-                    && ev.payload.IsHero == 1
-                    && ev.payload.TargetIsHero == 1
-                ).length,
-                deaths: telemetry.data.filter((ev) =>
-                    ev.target == p
-                    && ev.type == "KillActor"
-                    && ev.payload.TargetIsHero == 1
-                ).length,
-                // assists missing in data
-                minion_kills: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "KillActor"
-                    && ["*JungleMinion_TreeEnt*",
-                        "*Neutral_JungleMinion_DefaultBig*",
-                        "*Neutral_JungleMinion_DefaultSmall*",
-                        "*LeadMinion*",
-                        "*RangedMinion*",
-                        "*TankMinion*"
-                    ].indexOf(ev.payload.Killed) != -1
-                ).length,
-                jungle_kills: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "KillActor"
-                    && ["*JungleMinion_TreeEnt*",
-                        "*Neutral_JungleMinion_DefaultBig*",
-                        "*Neutral_JungleMinion_DefaultSmall*"
-                    ].indexOf(ev.payload.Killed) != -1
-                ).length,
-                non_jungle_minion_kills: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "KillActor"
-                    && ["*LeadMinion*",
-                        "*RangedMinion*",
-                        "*TankMinion*"
-                    ].indexOf(ev.payload.Killed) != -1
-                ).length,
-                crystal_mine_captures: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "KillActor"
-                    && ev.payload.Killed == "*JungleMinion_CrystalMiner*"
-                ).length,
-                gold_mine_captures: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "KillActor"
-                    && ev.payload.Killed == "*JungleMinion_GoldMiner*"
-                    || ev.payload.Killed == "*JungleMinion_Blitz_MiddleSentry*"
-                ).length,
-                kraken_captures: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "KillActor"
-                    && ev.payload.Killed == "*Kraken_Jungle*"
-                ).length,
-                turret_captures: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "KillActor"
-                    && (ev.payload.Killed == "*Turret*"
-                        || ev.payload.Killed == "*VainTurret*")
-                ).length,
-                // TODO Telemetry does not give accurate LifetimeGold
-                gold: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "LevelUp"
-                    && ev.payload.LifetimeGold > acc
-                    ? ev.payload.LifetimeGold
-                    : acc
-                , null),
-                dmg_true_hero: telemetry.data.reduce((acc, ev) =>
+                dmg_true: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "DealDamage"
-                    && ev.payload.TargetIsHero == 1
                     ? acc + ev.payload.Damage
                     : acc
                 , 0),
-                dmg_true_kraken: telemetry.data.reduce((acc, ev) =>
+                dmg_dealt: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "DealDamage"
-                    && ["*Kraken_Jungle*",
-                        "*Kraken_Captured*"
-                    ].indexOf(ev.payload.Target) != -1
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                dmg_true_turret: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.Target == "*Turret*"
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                dmg_true_vain_turret: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.Target == "*VainTurret*"
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                dmg_true_others: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.TargetIsHero == 0
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                dmg_dealt_hero: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.TargetIsHero == 1
                     ? acc + ev.payload.Dealt
                     : acc
                 , 0),
-                dmg_dealt_kraken: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ["*Kraken_Jungle*",
-                        "*Kraken_Captured*"
-                    ].indexOf(ev.payload.Target) != -1
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                dmg_dealt_turret: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.Target == "*Turret*"
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                dmg_dealt_vain_turret: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.Target == "*VainTurret*"
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                dmg_dealt_others: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.TargetIsHero == 0
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                dmg_rcvd_dealt_hero: telemetry.data.reduce((acc, ev) =>
+                dmg_rcvd_dealt: telemetry.data.reduce((acc, ev) =>
                     ev.target == p
                     && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
                     ? acc + ev.payload.Dealt
                     : acc
                 , 0),
-                dmg_rcvd_true_hero: telemetry.data.reduce((acc, ev) =>
+                dmg_rcvd_true: telemetry.data.reduce((acc, ev) =>
                     ev.target == p
                     && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
                     ? acc + ev.payload.Damage
                     : acc
                 , 0),
-                dmg_rcvd_dealt_others: telemetry.data.reduce((acc, ev) =>
-                    ev.target == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 0
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                dmg_rcvd_true_others: telemetry.data.reduce((acc, ev) =>
-                    ev.target == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 0
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                // max level of A
-                ability_a_level: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "LearnAbility"
-                    && crashIfBullshit(ev.payload.Ability)
-                    && api_name_mappings.get(ev.payload.Ability)
-                        .split(" ")[1] == "A"
-                ).reduce((acc, ev) =>
-                    ev.payload.Level > acc
-                    ? ev.payload.Level
-                    : acc
-                , 0),
-                // max level of B
-                ability_b_level: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "LearnAbility"
-                    && crashIfBullshit(ev.payload.Ability)
-                    && api_name_mappings.get(ev.payload.Ability)
-                        .split(" ")[1] == "B"
-                ).reduce((acc, ev) =>
-                    ev.payload.Level > acc
-                    ? ev.payload.Level
-                    : acc
-                , 0),
-                // max level of C
-                ability_c_level: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "LearnAbility"
-                    && crashIfBullshit(ev.payload.Ability)
-                    && api_name_mappings.get(ev.payload.Ability)
-                        .split(" ")[1] == "C"
-                ).reduce((acc, ev) =>
-                    ev.payload.Level > acc
-                    ? ev.payload.Level
-                    : acc
-                , 0),
-                hero_level: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "LevelUp"
-                    && ev.payload.Level > acc
-                    ? ev.payload.Level
-                    : acc
-                , -1),
-                items: null,  // TODO
-                // { array index: item id }
-                item_grants_inorder: dynamicColumn([].concat(...telemetry.data
-                    .filter((ev) => ev.actor == p && ev.type == "BuyItem")
-                    .map((ev, idx) => {
-                        crashIfBullshit(ev.payload.Item);
-                        const item = item_db_map.get(
-                            api_name_mappings.get(ev.payload.Item)
-                        );
-                        return [idx, item];
-                    })
-                )),
-                // TODO rm some duplicated code here
-                // { item id: count }
-                item_grants: dynamicColumn([].concat(...
-                (() => {
-                    // TODO refactor this
-                    const items = new Map();
-                    // key, value, key, value, …
-                    telemetry.data.forEach((ev) => {
-                        if (ev.actor == p && ev.type == "BuyItem") {
-                            crashIfBullshit(ev.payload.Item);
-                            const item = item_db_map.get(
-                                api_name_mappings.get(ev.payload.Item)
-                            );
-                            if (!items.has(item)) items.set(item, 0);
-                            items.set(item, items.get(item)+1);
-                        }
-                    });
-                    return [...items.entries()];
-                })()
-                )),
-                item_sells: dynamicColumn([].concat(...
-                (() => {
-                    const items = new Map();
-                    // key, value, key, value, …
-                    telemetry.data.forEach((ev) => {
-                        if (ev.actor == p && ev.type == "SellItem") {
-                            crashIfBullshit(ev.payload.Item);
-                            const item = item_db_map.get(
-                                         api_name_mappings.get(ev.payload.Item));
-                            if (!items.has(item)) {
-                                items.set(item, 0);
-                            }
-                            items.set(item, items.get(item)+1);
-                        }
-                    });
-                    return [...items.entries()];
-                })()
-                )),
-                ability_a_use: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "UseAbility"
-                    && crashIfBullshit(ev.payload.Ability)
-                    && api_name_mappings.get(ev.payload.Ability)
-                        .split(" ")[1] == "A"
-                ).length,
-                ability_b_use: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "UseAbility"
-                    && crashIfBullshit(ev.payload.Ability)
-                    && api_name_mappings.get(ev.payload.Ability)
-                        .split(" ")[1] == "B"
-                ).length,
-                ability_c_use: telemetry.data.filter((ev) =>
-                    ev.actor == p
-                    && ev.type == "UseAbility"
-                    && crashIfBullshit(ev.payload.Ability)
-                    && api_name_mappings.get(ev.payload.Ability)
-                        .split(" ")[1] == "C"
-                ).length,
-                ability_a_damage_true: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "A"
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                ability_a_damage_dealt: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "A"
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                ability_b_damage_true: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "B"
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                ability_b_damage_dealt: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "B"
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                ability_c_damage_true: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "C"
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                ability_c_damage_dealt: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "C"
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                ability_perk_damage_true: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "perk"
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                ability_perk_damage_dealt: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "perk"
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                ability_aa_damage_true: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "AA"
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                ability_aa_damage_dealt: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "AA"
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                ability_aacrit_damage_true: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "AAcrit"
-                    ? acc + ev.payload.Damage
-                    : acc
-                , 0),
-                ability_aacrit_damage_dealt: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "DealDamage"
-                    && ev.payload.IsHero == 1
-                    && crashIfBullshit(ev.payload.Source)
-                    && isAbility(ev.payload.Source)
-                    && api_name_mappings.get(ev.payload.Source)
-                        .split(" ")[1] == "AAcrit"
-                    ? acc + ev.payload.Dealt
-                    : acc
-                , 0),
-                item_uses: dynamicColumn([].concat(...
-                (() => {
-                    const items = new Map();
-                    // key, value, key, value, …
-                    telemetry.data.forEach((ev) => {
-                        if (ev.actor == p && ev.type == "UseItemAbility") {
-                            crashIfBullshit(ev.payload.Ability);
-                            const item = item_db_map.get(
-                                api_name_mappings.get(ev.payload.Ability)
-                            );
-                            if (!items.has(item)) items.set(item, 0);
-                            items.set(item, items.get(item)+1);
-                        }
-                    });
-                    return [...items.entries()];
-                })()
-                )),
-                player_damage: null,  // TODO
                 draft_position: telemetry.data.filter((ev) =>
                     ev.type == "HeroSelect").indexOf(
                         telemetry.data.filter((ev) =>
@@ -773,118 +362,45 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                             ev.type == "HeroSelect"
                             && ev.actor == p)
                         .map((sel) => sel.payload.Hero)[0]  // can be null
-                )),// traits calculated later
+                )),
                 // since 2.9
-                // theoretical heal from actor to hero
-                heal_heal_hero: telemetry.data.reduce((acc, ev) =>
+                heal_heal: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "HealTarget"
-                    && ev.payload.TargetIsHero == 1
                     ? acc + ev.payload.Heal
                     : acc
                 , 0),
                 // actual heal from actor to hero
-                heal_healed_hero: telemetry.data.reduce((acc, ev) =>
+                heal_healed: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "HealTarget"
-                    && ev.payload.TargetIsHero == 1
-                    ? acc + ev.payload.Healed
-                    : acc
-                , 0),
-                // theoretical heal from actor to ally
-                heal_heal_ally: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.target != p
-                    && ev.type == "HealTarget"
-                    && ev.payload.TargetIsHero == 1
-                    ? acc + ev.payload.Healed
-                    : acc
-                , 0),
-                // actual heal from actor to ally
-                heal_healed_ally: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.target != p
-                    && ev.type == "HealTarget"
-                    && ev.payload.TargetIsHero == 1
-                    ? acc + ev.payload.Healed
-                    : acc
-                , 0),
-                // theoretical heal from actor to other
-                heal_heal_other: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "HealTarget"
-                    && ev.payload.TargetIsHero != 1
-                    ? acc + ev.payload.Heal
-                    : acc
-                , 0),
-                // actual heal from actor to other
-                heal_healed_other: telemetry.data.reduce((acc, ev) =>
-                    ev.actor == p
-                    && ev.type == "HealTarget"
-                    && ev.payload.TargetIsHero != 1
                     ? acc + ev.payload.Healed
                     : acc
                 , 0),
                 // theoretical heal received from hero
-                heal_rcvd_heal_hero: telemetry.data.reduce((acc, ev) =>
+                heal_rcvd_heal: telemetry.data.reduce((acc, ev) =>
                     ev.target == p
                     && ev.type == "HealTarget"
-                    && ev.payload.IsHero == 1
                     ? acc + ev.payload.Heal
                     : acc
                 , 0),
                 // actual heal received from hero
-                heal_rcvd_healed_hero: telemetry.data.reduce((acc, ev) =>
+                heal_rcvd_healed: telemetry.data.reduce((acc, ev) =>
                     ev.target == p
                     && ev.type == "HealTarget"
-                    && ev.payload.IsHero == 1
-                    ? acc + ev.payload.Healed
-                    : acc
-                , 0),
-                // theoretical heal received from ally
-                heal_rcvd_heal_ally: telemetry.data.reduce((acc, ev) =>
-                    ev.target == p
-                    && ev.actor != p
-                    && ev.type == "HealTarget"
-                    && ev.payload.IsHero == 1
-                    ? acc + ev.payload.Heal
-                    : acc
-                , 0),
-                // actual heal received from hero
-                heal_rcvd_healed_ally: telemetry.data.reduce((acc, ev) =>
-                    ev.target == p
-                    && ev.actor != p
-                    && ev.type == "HealTarget"
-                    && ev.payload.IsHero == 1
                     ? acc + ev.payload.Healed
                     : acc
                 , 0),
                 // lifesteal
-                heal_rcvd_healed_vamp: telemetry.data.reduce((acc, ev) =>
+                heal_rcvd_vamp: telemetry.data.reduce((acc, ev) =>
                     ev.actor == p
                     && ev.type == "Vampirism"
                     ? acc + ev.payload.Vamp
                     : acc
-                , 0),
-                // theoretical heal received from minion
-                heal_rcvd_heal_other: telemetry.data.reduce((acc, ev) =>
-                    ev.target == p
-                    && ev.type == "HealTarget"
-                    && ev.payload.IsHero != 1 // TODO open an issue, is "-1" not "0"
-                    ? acc + ev.payload.Heal
-                    : acc
-                , 0),
-                // actual heal received from minion
-                heal_rcvd_healed_other: telemetry.data.reduce((acc, ev) =>
-                    ev.target == p
-                    && ev.type == "HealTarget"
-                    && ev.payload.IsHero != 1
-                    ? acc + ev.payload.Healed
-                    : acc
-                , 0),
+                , 0)
             } });
             participant_phase_records = participant_phase_records.concat(
-                participants_phase);  // TODO calc stats
+                participants_phase);
         }, { concurrency: MAXCONNS });
 
         let transaction_profiler = logger.startTimer();
