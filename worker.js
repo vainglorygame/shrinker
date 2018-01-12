@@ -8,7 +8,6 @@ const amqp = require("amqplib"),
     Promise = require("bluebird"),
     winston = require("winston"),
     loggly = require("winston-loggly-bulk"),
-    datadog = require("winston-datadog"),
     Seq = require("sequelize"),
     cacheManager = require("cache-manager"),
     api_name_mappings = require("../orm/mappings").map,
@@ -19,7 +18,6 @@ const RABBITMQ_URI = process.env.RABBITMQ_URI,
     DATABASE_URI = process.env.DATABASE_URI,
     QUEUE = process.env.QUEUE || "shrink",
     LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
-    DATADOG_TOKEN = process.env.DATADOG_TOKEN,
     // matches + players, 5 players with 50 matches as default
     BATCHSIZE = parseInt(process.env.BATCHSIZE) || 20,
     // maximum number of elements to be inserted in one statement
@@ -47,12 +45,6 @@ if (LOGGLY_TOKEN)
         tags: ["backend", "shrinker", QUEUE],
         json: true
     });
-
-// datadog integration
-if (DATADOG_TOKEN)
-    logger.add(new datadog({
-        api_key: DATADOG_TOKEN
-    }), null, true);
 
 // split an array into arrays of max chunksize
 function* chunks(arr) {
